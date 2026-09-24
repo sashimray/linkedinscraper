@@ -156,12 +156,13 @@ def create_table(conn, df, table_name):
         'float64': 'REAL',
         'datetime64[ns]': 'TIMESTAMP',
         'object': 'TEXT',
+        'str': 'TEXT',  # pandas 3.x default string dtype
         'bool': 'INTEGER'
     }
-    
-    # Prepare a string with column names and their types
+
+    # Prepare a string with column names and their types (unknown dtypes fall back to TEXT)
     columns_with_types = ', '.join(
-        f'"{column}" {type_mapping[str(df.dtypes[column])]}'
+        f'"{column}" {type_mapping.get(str(df.dtypes[column]), "TEXT")}'
         for column in df.columns
     )
     
