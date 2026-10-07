@@ -14,3 +14,8 @@ indeed.py
 *.log
 SupabaseUpload/
 lscraper/
+*.my_env
+*.pdf
+*.DS_Store
+
+output/

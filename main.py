@@ -98,6 +98,7 @@ def safe_detect(text):
         return 'en'
 
 def remove_irrelevant_jobs(joblist, config):
+    new_joblist = joblist
     #Filter out jobs based on description, title, and language. Set up in config.json.
     new_joblist = [job for job in joblist if not any(word.lower() in job['job_description'].lower() for word in config['desc_words'])]   
     new_joblist = [job for job in new_joblist if not any(word.lower() in job['title'].lower() for word in config['title_exclude'])] if len(config['title_exclude']) > 0 else new_joblist
