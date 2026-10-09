@@ -19,3 +19,6 @@ lscraper/
 *.DS_Store
 
 output/
+
+# Personal resume data
+resume.json

@@ -117,6 +117,46 @@
                 cursor: row-resize;
             }
 
+            .scores {
+                display: flex;
+                gap: 6px;
+                margin-top: 6px;
+            }
+            .score {
+                font-size: 12px;
+                padding: 2px 8px;
+                border-radius: 10px;
+                background-color: #e0e0e0;
+                color: #333;
+            }
+            .score-high { background-color: #c8e6c9; }
+            .score-mid { background-color: #fff3c4; }
+            .score-low { background-color: #ffd6d6; }
+            .match-section {
+                margin: 12px 0;
+                padding: 10px;
+                background-color: #f8f8f8;
+                border-radius: 5px;
+            }
+            .match-section h4 {
+                margin: 0 0 6px 0;
+            }
+            .match-row {
+                margin: 4px 0;
+            }
+            .chip {
+                display: inline-block;
+                font-size: 12px;
+                padding: 2px 8px;
+                margin: 2px;
+                border-radius: 10px;
+            }
+            .chip-matched { background-color: #c8e6c9; }
+            .chip-gap { background-color: #ffd6d6; }
+            .match-empty {
+                color: #777;
+                font-size: 13px;
+            }
             #bottom-pane {
                 overflow-y: auto;
                 flex-grow: 1;
@@ -136,6 +176,12 @@
                         <h3>{{ job.title }}</h3>
                         <p>{{ job.company }}, {{ job.location }}</p>
                         <p>{{ job.date }}</p>
+                        <div class="scores">
+                            {% for label, value in [('ATS', job.ats_score), ('Embed', job.ats_score_embed)] %}
+                            {% set value = value or 0 %}
+                            <span class="score {% if value >= 70 %}score-high{% elif value >= 40 %}score-mid{% else %}score-low{% endif %}">{{ label }} {{ value }}</span>
+                            {% endfor %}
+                        </div>
                     </div>
                 </a>
                 {% endfor %}

@@ -40,6 +40,36 @@ function updateCoverLetter(coverLetter) {
 
 
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => (
+        {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+
+function scoreClass(score) {
+    return score >= 70 ? 'score-high' : score >= 40 ? 'score-mid' : 'score-low';
+}
+
+function chips(terms, kind) {
+    if (!terms || terms.length === 0) {
+        return '<span class="match-empty">none</span>';
+    }
+    return terms.map(term => '<span class="chip chip-' + kind + '">' + escapeHtml(term) + '</span>').join('');
+}
+
+function matchSection(title, score, summary, missingNote) {
+    // One score with its matched keywords and gaps; summary is null when there is nothing to compare
+    var value = score || 0;
+    var html = '<div class="match-section">';
+    html += '<h4>' + title + ' <span class="score ' + scoreClass(value) + '">' + value + '</span></h4>';
+    if (summary) {
+        html += '<div class="match-row"><strong>Matched:</strong> ' + chips(summary.matched, 'matched') + '</div>';
+        html += '<div class="match-row"><strong>Gaps:</strong> ' + chips(summary.gaps, 'gap') + '</div>';
+    } else {
+        html += '<div class="match-empty">' + missingNote + '</div>';
+    }
+    return html + '</div>';
+}
+
 function updateJobDetails(job) {
     var jobDetailsDiv = document.getElementById('job-details');
     var coverLetterDiv = document.getElementById('bottom-pane'); // Get the cover letter div
@@ -55,6 +85,11 @@ function updateJobDetails(job) {
     html += '</div>';
     html += '<p class="job-detail">' + job.company + ', ' + job.location + '</p>';
     html += '<p class="job-detail">' + job.date + '</p>';
+    var match = job.match || {};
+    html += matchSection('ATS score (rules, resume.json)', job.ats_score, match.rule,
+                         'No parsed requirements for this job, or resume.json could not be read.');
+    html += matchSection('ATS score (embeddings, skills_flat.json)', job.ats_score_embed, match.embed,
+                         'No embedder.py matches for this job yet, or skills_flat.json could not be read.');
     html += '<p class="job-description">' + job.job_description + '</p>';
 
     jobDetailsDiv.innerHTML = html;

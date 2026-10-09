@@ -1,8 +1,6 @@
 import requests
 import json
-import sqlite3
 import sys
-from sqlite3 import Error
 from bs4 import BeautifulSoup
 import time as tm
 from itertools import groupby
@@ -11,6 +9,8 @@ import pandas as pd
 from urllib.parse import quote
 from langdetect import detect
 from langdetect.lang_detect_exception import LangDetectException
+from db import create_connection, create_table, update_table, table_exists, read_table, save_job_details_by_posting
+from job_parser import parse_job_details
 
 
 def load_config(file_name):
@@ -60,6 +60,7 @@ def transform(soup):
             'company': company.text.strip().replace('\n', ' ') if company else '',
             'location': location.text.strip() if location else '',
             'date': date,
+            'job_posting_id':job_posting_id,
             'job_url': job_url,
             'job_description': job_description,
             'applied': 0,
@@ -111,7 +112,7 @@ def remove_irrelevant_jobs(joblist, config):
 def remove_duplicates(joblist, config):
     # Remove duplicate jobs in the joblist. Duplicate is defined as having the same title and company.
     joblist.sort(key=lambda x: (x['title'], x['company']))
-    joblist = [next(g) for k, g in groupby(joblist, key=lambda x: (x['title'], x['company']))]
+    joblist = [next(g) for k, g in groupby(joblist, key=lambda x: (x['title'], x['company'], x['job_posting_id']))]
     return joblist
 
 def convert_date_format(date_string):
@@ -131,91 +132,6 @@ def convert_date_format(date_string):
     except ValueError:
         print(f"Error: The date for job {date_string} - is not in the correct format.")
         return None
-
-def create_connection(config):
-    # Create a database connection to a SQLite database
-    conn = None
-    path = config['db_path']
-    try:
-        conn = sqlite3.connect(path) # creates a SQL database in the 'data' directory
-        #print(sqlite3.version)
-    except Error as e:
-        print(e)
-
-    return conn
-
-def create_table(conn, df, table_name):
-    ''''
-    # Create a new table with the data from the dataframe
-    df.to_sql(table_name, conn, if_exists='replace', index=False)
-    print (f"Created the {table_name} table and added {len(df)} records")
-    '''
-    # Create a new table with the data from the DataFrame
-    # Prepare data types mapping from pandas to SQLite
-    type_mapping = {
-        'int64': 'INTEGER',
-        'float64': 'REAL',
-        'datetime64[ns]': 'TIMESTAMP',
-        'object': 'TEXT',
-        'str': 'TEXT',  # pandas 3.x default string dtype
-        'bool': 'INTEGER'
-    }
-
-    # Prepare a string with column names and their types (unknown dtypes fall back to TEXT)
-    columns_with_types = ', '.join(
-        f'"{column}" {type_mapping.get(str(df.dtypes[column]), "TEXT")}'
-        for column in df.columns
-    )
-    
-    # Prepare SQL query to create a new table
-    create_table_sql = f"""
-        CREATE TABLE IF NOT EXISTS "{table_name}" (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            {columns_with_types}
-        );
-    """
-    
-    # Execute SQL query
-    cursor = conn.cursor()
-    cursor.execute(create_table_sql)
-    
-    # Commit the transaction
-    conn.commit()
-
-    # Insert DataFrame records one by one
-    insert_sql = f"""
-        INSERT INTO "{table_name}" ({', '.join(f'"{column}"' for column in df.columns)})
-        VALUES ({', '.join(['?' for _ in df.columns])})
-    """
-    for record in df.to_dict(orient='records'):
-        cursor.execute(insert_sql, list(record.values()))
-    
-    # Commit the transaction
-    conn.commit()
-
-    print(f"Created the {table_name} table and added {len(df)} records")
-
-def update_table(conn, df, table_name):
-    # Update the existing table with new records.
-    df_existing = pd.read_sql(f'select * from {table_name}', conn)
-
-    # Create a dataframe with unique records in df that are not in df_existing
-    df_new_records = pd.concat([df, df_existing, df_existing]).drop_duplicates(['title', 'company', 'date'], keep=False)
-
-    # If there are new records, append them to the existing table
-    if len(df_new_records) > 0:
-        df_new_records.to_sql(table_name, conn, if_exists='append', index=False)
-        print (f"Added {len(df_new_records)} new records to the {table_name} table")
-    else:
-        print (f"No new records to add to the {table_name} table")
-
-def table_exists(conn, table_name):
-    # Check if the table already exists in the database
-    cur = conn.cursor()
-    cur.execute(f"SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{table_name}'")
-    if cur.fetchone()[0]==1 :
-        return True
-    return False
 
 def job_exists(df, job):
     # Check if the job already exists in the dataframe
@@ -253,11 +169,9 @@ def find_new_jobs(all_jobs, conn, config):
     filtered_jobs_db = pd.DataFrame()    
     if conn is not None:
         if table_exists(conn, jobs_tablename):
-            query = f"SELECT * FROM {jobs_tablename}"
-            jobs_db = pd.read_sql_query(query, conn)
+            jobs_db = read_table(conn, jobs_tablename)
         if table_exists(conn, filtered_jobs_tablename):
-            query = f"SELECT * FROM {filtered_jobs_tablename}"
-            filtered_jobs_db = pd.read_sql_query(query, conn)
+            filtered_jobs_db = read_table(conn, filtered_jobs_tablename)
 
     new_joblist = [job for job in all_jobs if not job_exists(jobs_db, job) and not job_exists(filtered_jobs_db, job)]
     return new_joblist
@@ -265,6 +179,7 @@ def find_new_jobs(all_jobs, conn, config):
 def main(config_file):
     start_time = tm.perf_counter()
     job_list = []
+    sections_by_posting = {}  # job_posting_id -> sections, saved to job_details once the jobs have ids
 
     config = load_config(config_file)
     jobs_tablename = config['jobs_tablename'] # name of the table to store the "approved" jobs
@@ -286,6 +201,12 @@ def main(config_file):
                 continue
             print('Found new job: ', job['title'], 'at ', job['company'], job['job_url'])
             desc_soup = get_with_retry(job['job_url'], config)
+            # Parse the sections before transform_job, which removes links and adds bullet markers to the page
+            details = parse_job_details(desc_soup)
+            company = details.pop('company')
+            job['company'] = job['company'] or company
+            job['company_industry'] = details.pop('company_industry')
+            sections_by_posting[job['job_posting_id']] = details
             job['job_description'] = transform_job(desc_soup)
             language = safe_detect(job['job_description'])
             if language not in config['languages']:
@@ -310,6 +231,9 @@ def main(config_file):
                 update_table(conn, df, jobs_tablename)
             else:
                 create_table(conn, df, jobs_tablename)
+            if not df.empty:
+                save_job_details_by_posting(conn, jobs_tablename,
+                                            {job['job_posting_id']: sections_by_posting[job['job_posting_id']] for job in jobs_to_add})
                 
             #Update or Create the database table for the filtered out jobs
             if table_exists(conn, filtered_jobs_tablename):

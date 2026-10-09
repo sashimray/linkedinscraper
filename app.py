@@ -1,10 +1,13 @@
 from flask import Flask, render_template, jsonify
-import pandas as pd
 import sqlite3
 import json
 import openai
 from pdfminer.high_level import extract_text
 from flask_cors import CORS
+from functools import lru_cache
+
+from db import add_columns, read_ranked_jobs
+from job_match import job_match, load_profiles
 
 def load_config(file_name):
     # Load the config file
@@ -52,13 +55,7 @@ def job(job_id):
 
 @app.route('/get_all_jobs')
 def get_all_jobs():
-    conn = sqlite3.connect(config["db_path"])
-    query = "SELECT * FROM jobs"
-    df = pd.read_sql_query(query, conn)
-    df = df.sort_values(by='id', ascending=False)
-    df.reset_index(drop=True, inplace=True)
-    jobs = df.to_dict('records')
-    return jsonify(jobs)
+    return jsonify(read_jobs_from_db())
 
 @app.route('/job_details/<int:job_id>')
 def job_details(job_id):
@@ -72,6 +69,7 @@ def job_details(job_id):
         column_names = [column[0] for column in cursor.description]
         # Create a dictionary mapping column names to row values
         job = dict(zip(column_names, job_tuple))
+        job['match'] = read_job_match(job_id)
         return jsonify(job)
     else:
         return jsonify({"error": "Job not found"}), 404
@@ -245,12 +243,28 @@ def get_CoverLetter(job_id):
     return jsonify({"cover_letter": response}), 200
 
 def read_jobs_from_db():
+    # Visible jobs, highest of ats_score / ats_score_embed first
     conn = sqlite3.connect(config["db_path"])
-    query = "SELECT * FROM jobs WHERE hidden = 0"
-    df = pd.read_sql_query(query, conn)
-    df = df.sort_values(by='id', ascending=False)
-    # df.reset_index(drop=True, inplace=True)
-    return df.to_dict('records')
+    try:
+        return read_ranked_jobs(conn, 'jobs')
+    finally:
+        conn.close()
+
+@lru_cache(maxsize=1)
+def match_profiles():
+    # Loaded once per app start; restart the app after changing resume.json or skills_flat.json
+    profiles = load_profiles(config.get('resume_json_path', 'resume.json'), config.get('skills_path', 'skills_flat.json'))
+    for error in profiles['errors']:
+        print(f"Keyword matching disabled: {error}")
+    return profiles
+
+def read_job_match(job_id):
+    # Matched keywords and gaps for the job page (see job_match.py)
+    conn = sqlite3.connect(config["db_path"])
+    try:
+        return job_match(conn, job_id, match_profiles())
+    finally:
+        conn.close()
 
 def verify_db_schema():
     conn = sqlite3.connect(config["db_path"])
@@ -270,6 +284,8 @@ def verify_db_schema():
         # If it doesn't exist, add it
         cursor.execute("ALTER TABLE jobs ADD COLUMN resume TEXT")
         print("Added resume column to jobs table")
+
+    add_columns(conn, 'jobs', {'ats_score': 'INT DEFAULT 0', 'ats_score_embed': 'INT DEFAULT 0'})
 
     conn.close()
 
