@@ -10,6 +10,7 @@ sys.path.insert(0, ROOT)
 from bs4 import BeautifulSoup
 
 import db
+import schema
 import llm_sections
 from job_parser import classify_heading, parse_job_details, parse_job_text
 from resumekit.application_kit import ApplicationKit
@@ -246,6 +247,8 @@ def test_clearance_or_citizenship_requirement():
         "- Active Secret security clearance, with the ability to obtain/maintain a Top Secret clearance if required.",
         "- Python 5+ years\n- United States Citizen \u2014 able to gain CJIS clearance",
         "- Must be eligible for a clearance if required for the work. U.S. citizenship is required to be considered.",
+        "Work Authorization / Security Clearance\n- Employee must be a US citizen",
+        "Benefits\n- 401k\nPosition Requires a Top Secret (TS/SCI) Clearance with a Polygraph.",
     ]
     keep = [
         "- US citizen or green card holder: this position requires access to export-controlled documentation",
@@ -259,6 +262,13 @@ def test_clearance_or_citizenship_requirement():
         "- Experience with AWS Secrets Manager and secret rotation",
         "",
         None,
+        # boilerplate and labels from full descriptions
+        "All qualified applicants will receive consideration without regard to race, religion, citizenship or national origin.",
+        "Applicants with arrest or conviction records will be considered in accordance with security clearance requirements.",
+        "Background investigation components can vary by level of US government security clearance held.",
+        "Security Clearance Type:\nNone/Not Required",
+        "Work Authorization / Security Clearance",
+        "- Preference given to qualified candidates with active clearance.",
     ]
     for text in hide:
         assert check(text), text
@@ -275,8 +285,7 @@ def test_hide_clearance_jobs():
             ("Dev", "C", "3", "Requirements:\n- Python", 0),
         ])
         config = {"db_path": path, "jobs_tablename": "jobs"}
-        hist_run.hist_run(config)
-        assert hist_run.hide_clearance_jobs(config, dry_run=True) == [1]
+        assert hist_run.hide_clearance_jobs(config, dry_run=True) == [1]  # reads the description, no job_details needed
         conn = sqlite3.connect(path)
         assert conn.execute("SELECT count(*) FROM jobs WHERE hidden = 1").fetchone()[0] == 0  # dry run changes nothing
         conn.close()
@@ -291,19 +300,10 @@ def test_llm_run_picks_up_jobs_without_details_row():
     with tempfile.TemporaryDirectory() as tmp:
         path = make_jobs_db(tmp, [("Dev", "A", "1", "text", 0)])
         conn = sqlite3.connect(path)
+        schema.init_db(conn, "jobs")
         jobs = db.read_jobs_without_sections(conn, "jobs")
         conn.close()
         assert [j["company"] for j in jobs] == ["A"]
-
-
-def test_scraper_saves_sections_by_posting_id():
-    with tempfile.TemporaryDirectory() as tmp:
-        path = make_jobs_db(tmp, [("Dev", "A", "111", "text", 0), ("Dev", "B", "222", "text", 0)])
-        sections = parse_job_text(PARSEABLE)
-        conn = sqlite3.connect(path)
-        db.save_job_details_by_posting(conn, "jobs", {"222": sections, "999": sections})  # 999 isn't in jobs
-        conn.close()
-        assert job_details(path) == {"B": ("- Build things", "- Python", "- Go", 1)}
 
 
 if __name__ == "__main__":

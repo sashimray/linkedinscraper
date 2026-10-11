@@ -9,8 +9,9 @@ import pandas as pd
 from urllib.parse import quote
 from langdetect import detect
 from langdetect.lang_detect_exception import LangDetectException
-from db import create_connection, create_table, update_table, table_exists, read_table, save_job_details_by_posting
-from job_parser import parse_job_details
+from db import insert_records, read_table
+from schema import open_db, prepare_jobs_table, table_exists
+from job_parser import description_html, parse_company_info
 
 
 def load_config(file_name):
@@ -91,6 +92,23 @@ def transform_job(soup):
         return text
     else:
         return "Could not find Job Description"
+
+def apply_job_page(job, soup):
+    """Fill job's company, company_industry, job_description_html and job_description from its job page
+    (soup may be None when the fetch failed). The sections are split later, by the workflow's parse step."""
+    # Read the page before transform_job, which removes links and adds bullet markers to it
+    company = parse_company_info(soup) if soup is not None else {'company': '', 'company_industry': ''}
+    job['company'] = job['company'] or company['company']
+    job['company_industry'] = company['company_industry']
+    job['job_description_html'] = description_html(soup)
+    job['job_description'] = transform_job(soup) if soup is not None else "Could not find Job Description"
+
+def save_jobs(conn, df, table_name):
+    """Insert df's jobs into table_name, creating the table or adding columns first. Returns how many were added
+    (jobs whose job_posting_id is already in the table are skipped)."""
+    added = insert_records(conn, df, table_name) if prepare_jobs_table(conn, df, table_name) else 0
+    print(f"Added {added} new records to the {table_name} table" if added else f"No new records for the {table_name} table")
+    return added
 
 def safe_detect(text):
     try:
@@ -179,14 +197,13 @@ def find_new_jobs(all_jobs, conn, config):
 def main(config_file):
     start_time = tm.perf_counter()
     job_list = []
-    sections_by_posting = {}  # job_posting_id -> sections, saved to job_details once the jobs have ids
 
     config = load_config(config_file)
     jobs_tablename = config['jobs_tablename'] # name of the table to store the "approved" jobs
     filtered_jobs_tablename = config['filtered_jobs_tablename'] # name of the table to store the jobs that have been filtered out based on description keywords (so that in future they are not scraped again)
     #Scrape search results page and get job cards. This step might take a while based on the number of pages and search queries.
     all_jobs = get_jobcards(config)
-    conn = create_connection(config)
+    conn = open_db(config)
     #filtering out jobs that are already in the database
     all_jobs = find_new_jobs(all_jobs, conn, config)
     print ("Total new jobs found after comparing to the database: ", len(all_jobs))
@@ -201,13 +218,7 @@ def main(config_file):
                 continue
             print('Found new job: ', job['title'], 'at ', job['company'], job['job_url'])
             desc_soup = get_with_retry(job['job_url'], config)
-            # Parse the sections before transform_job, which removes links and adds bullet markers to the page
-            details = parse_job_details(desc_soup)
-            company = details.pop('company')
-            job['company'] = job['company'] or company
-            job['company_industry'] = details.pop('company_industry')
-            sections_by_posting[job['job_posting_id']] = details
-            job['job_description'] = transform_job(desc_soup)
+            apply_job_page(job, desc_soup)
             language = safe_detect(job['job_description'])
             if language not in config['languages']:
                 print('Job description language not supported: ', language)
@@ -219,27 +230,16 @@ def main(config_file):
         #Create a list for jobs removed based on job description keywords - they will be added to the filtered_jobs table
         filtered_list = [job for job in job_list if job not in jobs_to_add]
         df = pd.DataFrame(jobs_to_add)
-        df_filtered = pd.DataFrame(filtered_list)
+        # The filtered table only stops these jobs being scraped again, so it doesn't need their markup
+        df_filtered = pd.DataFrame(filtered_list).drop(columns=['job_description_html'], errors='ignore')
         df['date_loaded'] = datetime.now()
         df_filtered['date_loaded'] = datetime.now()
         df['date_loaded'] = df['date_loaded'].astype(str)
         df_filtered['date_loaded'] = df_filtered['date_loaded'].astype(str)        
         
         if conn is not None:
-            #Update or Create the database table for the job list
-            if table_exists(conn, jobs_tablename):
-                update_table(conn, df, jobs_tablename)
-            else:
-                create_table(conn, df, jobs_tablename)
-            if not df.empty:
-                save_job_details_by_posting(conn, jobs_tablename,
-                                            {job['job_posting_id']: sections_by_posting[job['job_posting_id']] for job in jobs_to_add})
-                
-            #Update or Create the database table for the filtered out jobs
-            if table_exists(conn, filtered_jobs_tablename):
-                update_table(conn, df_filtered, filtered_jobs_tablename)
-            else:
-                create_table(conn, df_filtered, filtered_jobs_tablename)
+            save_jobs(conn, df, jobs_tablename)
+            save_jobs(conn, df_filtered, filtered_jobs_tablename)
         else:
             print("Error! cannot create the database connection.")
         

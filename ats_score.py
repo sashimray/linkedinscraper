@@ -25,7 +25,8 @@ import os
 import re
 from datetime import date
 
-from db import create_connection, read_visible_job_sections, update_ats_scores
+from db import read_visible_job_sections, update_ats_scores
+from schema import open_db
 
 REQUIREMENTS_WEIGHT = 0.85
 PREFERENCES_WEIGHT = 0.15
@@ -90,11 +91,12 @@ DEGREE_FIELDS = {
 ANY_FIELD = re.compile(r'related|equivalent|similar|stem\b|technical (?:field|discipline)|quantitative')
 
 # Words that carry no fit signal: English filler, generic job-posting words and soft skills
-GENERIC_WORDS = set("""
+GENERIC_WORDS = set(""" 
 a about above across after all also an and any are as at be being both but by can could do does etc for from has have
 having in including into is it its like may more most must not of on one or other our own per plus such than that the
 their them then there these this those through to under up using via was we well were what when where which while who
-will with within without would you your
+will with within without would you your very properly triggers audiences diverse critical possess strategies vital over
+informed rules data interest management desirable
 ability able experience experienced expertise exposure familiarity familiar knowledge proficiency proficient strong
 solid deep excellent good great proven demonstrated hands work working years year yrs plus preferred required
 requirement requirements qualification qualifications minimum bonus nice role position candidate team teams company
@@ -442,7 +444,7 @@ def load_resume(path):
 
 
 def _read_jobs(config, job_ids=None):
-    conn = create_connection(config)
+    conn = open_db(config)
     if conn is None:
         raise ValueError("Cannot create the database connection.")
     try:
@@ -467,7 +469,7 @@ def score_jobs(config, resume_path='resume.json', dry_run=False):
     """Score every visible job and save it to jobs.ats_score. Returns {job_id: score} for the scored jobs."""
     profile = load_resume_profile(load_resume(resume_path))
     jobs_tablename = config['jobs_tablename']
-    conn = create_connection(config)
+    conn = open_db(config)
     if conn is None:
         print("Error! cannot create the database connection.")
         return {}

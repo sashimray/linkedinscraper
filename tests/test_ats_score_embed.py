@@ -1,4 +1,6 @@
+import io
 import json
+from contextlib import redirect_stdout
 import os
 import sqlite3
 import sys
@@ -10,7 +12,8 @@ sys.path.insert(0, ROOT)
 import db
 from ats_score_embed import (EMBED_FULL, MISSING_DOMAIN_WEIGHT, MISSING_TECH_WEIGHT, explain, group_lines, line_credit, match_credit,
                              score_job, score_jobs, section_score, skill_profile, alias_coverage)
-from embedder import DEFAULT_THRESHOLD, SCHEMA
+from embedder import DEFAULT_THRESHOLD
+from schema import EMBEDDER_SCHEMA as SCHEMA
 
 PROFILE = skill_profile([{'name': 'Python', 'weight': 3}, {'name': 'Docker', 'aliases': ['containerization'], 'weight': 3},
                          {'name': 'distributed systems', 'weight': 2}])
@@ -109,7 +112,8 @@ def test_score_jobs_saves_visible_jobs_only():
     con.commit()
     config = {'db_path': path, 'jobs_tablename': 'jobs'}
     assert score_jobs(config, skills_path, dry_run=True) == {1: 50}
-    assert 'ats_score_embed' not in [r[1] for r in con.execute('PRAGMA table_info(jobs)')]
+    # the dry run brings the schema up to date (adds the column) but saves no scores
+    assert con.execute('SELECT id, ats_score_embed FROM jobs ORDER BY id').fetchall() == [(1, 0), (2, 0)]
     score_jobs(config, skills_path)
     assert con.execute('SELECT id, ats_score_embed FROM jobs ORDER BY id').fetchall() == [(1, 50), (2, 0)]
     con.close()
@@ -122,14 +126,16 @@ def test_score_jobs_without_embedder_tables():
         json.dump({'skills': []}, f)
     path = os.path.join(tmp, 'jobs.db')
     sqlite3.connect(path).execute('CREATE TABLE jobs (id INTEGER PRIMARY KEY, hidden INTEGER)')
-    e = raises(ValueError, lambda: score_jobs({'db_path': path, 'jobs_tablename': 'jobs'}, skills_path))
-    assert 'embedder.py' in str(e)
+    out = io.StringIO()
+    with redirect_stdout(out):
+        assert score_jobs({'db_path': path, 'jobs_tablename': 'jobs'}, skills_path) == {}
+    assert 'run embedder.py first' in out.getvalue()
 
 
 def test_update_ats_scores_custom_column():
     con = sqlite3.connect(':memory:')
-    con.execute('CREATE TABLE jobs (id INTEGER PRIMARY KEY)')
-    con.execute('INSERT INTO jobs VALUES (1)')
+    con.execute('CREATE TABLE jobs (id INTEGER PRIMARY KEY, other_score INT)')
+    con.execute('INSERT INTO jobs VALUES (1, 0)')
     db.update_ats_scores(con, 'jobs', {1: 70}, 'other_score')
     assert con.execute('SELECT other_score FROM jobs').fetchone() == (70,)
 

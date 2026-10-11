@@ -11,7 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ats_score
 import ats_score_embed
 import db
-from embedder import SCHEMA, load_skills
+import schema
+from embedder import load_skills
+from schema import EMBEDDER_SCHEMA as SCHEMA
 from job_match import job_match, load_profiles
 from test_ats_score import RESUME
 
@@ -38,7 +40,7 @@ def make_conn():
     conn = sqlite3.connect(':memory:')
     conn.executescript(SCHEMA)
     conn.execute('CREATE TABLE jobs (id INTEGER PRIMARY KEY, title TEXT, hidden INTEGER, ats_score INT, ats_score_embed INT)')
-    db.create_job_details_table(conn, 'jobs')
+    schema.create_job_details_table(conn, 'jobs')
     return conn
 
 
@@ -77,12 +79,13 @@ def test_read_ranked_jobs_latest_date_first_then_average_score():
     assert [job['id'] for job in db.read_ranked_jobs(conn, 'jobs')] == [4, 6, 1, 2, 5, 7]
 
 
-def test_read_ranked_jobs_adds_missing_score_columns():
+def test_read_ranked_jobs_on_old_table_after_init_db():
     conn = sqlite3.connect(':memory:')
     conn.execute('CREATE TABLE jobs (id INTEGER PRIMARY KEY, hidden INTEGER, date TEXT)')
     conn.execute("INSERT INTO jobs VALUES (1, 0, '2026-10-09')")
-    assert db.read_ranked_jobs(conn, 'jobs') == [
-        {'id': 1, 'hidden': 0, 'date': '2026-10-09', 'ats_score': 0, 'ats_score_embed': 0}]
+    schema.init_db(conn, 'jobs')
+    job, = db.read_ranked_jobs(conn, 'jobs')
+    assert (job['id'], job['ats_score'], job['ats_score_embed']) == (1, 0, 0)
 
 
 def test_single_job_readers_handle_missing_tables():

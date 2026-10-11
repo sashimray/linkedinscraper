@@ -1,5 +1,5 @@
 import re
-from bs4 import NavigableString
+from bs4 import BeautifulSoup, Comment, NavigableString
 
 # Parse structured fields out of a LinkedIn job page:
 # company name, industry, and the responsibilities / requirements / preferred qualifications sections.
@@ -65,6 +65,37 @@ def parse_company_info(soup):
         if label and value and label.get_text(strip=True).lower() == 'industries':
             industry = value.get_text(' ', strip=True)
     return {'company': company.get_text(' ', strip=True) if company else '', 'company_industry': industry}
+
+
+DESCRIPTION_CLASS = 'description__text description__text--rich'
+NOISE_TAGS = ('button', 'icon', 'script', 'style', 'svg', 'img')
+
+
+def description_html(soup):
+    """The job description markup worth storing: LinkedIn's description div without the show more/less buttons,
+    icons, comments and attributes, keeping the tags that carry structure (strong, ul/li, br, p, h*). '' if missing.
+    Works on a copy, so the page soup is left as it was."""
+    if soup is None:
+        return ''
+    div = soup.find('div', class_=DESCRIPTION_CLASS)
+    if div is None:
+        return ''
+    markup = div.find('div', class_='show-more-less-html__markup') or div
+    copy = BeautifulSoup(markup.decode_contents(), 'html.parser')
+    for tag in copy.find_all(NOISE_TAGS):
+        tag.decompose()
+    for comment in copy.find_all(string=lambda s: isinstance(s, Comment)):
+        comment.extract()
+    for tag in copy.find_all(True):
+        tag.attrs = {}
+    return copy.decode().strip()
+
+
+def parse_description_html(html):
+    """Sections from stored description_html, the same way parse_job_details reads the live page."""
+    sections = _sections_from_blocks(_to_blocks(BeautifulSoup(f'<div>{html or ""}</div>', 'html.parser').div))
+    sections['sections_parsed'] = int(bool(sections['responsibilities'] and sections['requirements']))
+    return sections
 
 
 def parse_job_text(text):

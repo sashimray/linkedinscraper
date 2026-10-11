@@ -6,7 +6,8 @@ from pdfminer.high_level import extract_text
 from flask_cors import CORS
 from functools import lru_cache
 
-from db import add_columns, read_ranked_jobs
+from db import read_ranked_jobs
+from schema import init_db
 from job_match import job_match, load_profiles
 
 def load_config(file_name):
@@ -267,27 +268,12 @@ def read_job_match(job_id):
         conn.close()
 
 def verify_db_schema():
+    # Create missing tables and add missing columns (cover_letter, resume, the ATS scores, ...); see schema.py
     conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-
-    # Get the table information
-    cursor.execute("PRAGMA table_info(jobs)")
-    table_info = cursor.fetchall()
-
-    # Check if the "cover_letter" column exists
-    if "cover_letter" not in [column[1] for column in table_info]:
-        # If it doesn't exist, add it
-        cursor.execute("ALTER TABLE jobs ADD COLUMN cover_letter TEXT")
-        print("Added cover_letter column to jobs table")
-
-    if "resume" not in [column[1] for column in table_info]:
-        # If it doesn't exist, add it
-        cursor.execute("ALTER TABLE jobs ADD COLUMN resume TEXT")
-        print("Added resume column to jobs table")
-
-    add_columns(conn, 'jobs', {'ats_score': 'INT DEFAULT 0', 'ats_score_embed': 'INT DEFAULT 0'})
-
-    conn.close()
+    try:
+        init_db(conn, config.get("jobs_tablename", "jobs"))
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     verify_db_schema()  # Verify the DB schema before running the app

@@ -20,12 +20,12 @@ Runs locally only; nothing is sent to an API.
 """
 
 import argparse
-import sqlite3
 import sys
 
 from ats_score import (ANY_OF, PREFERENCES_WEIGHT, REQUIREMENTS_WEIGHT, degree_level, find_skills, keyword_words,
                        required_years)
-from db import create_connection, read_visible_job_item_matches, update_ats_scores
+from db import read_visible_job_item_matches, update_ats_scores
+from schema import open_db
 from embedder import DEFAULT_THRESHOLD, load_skills
 
 SCORE_COLUMN = 'ats_score_embed'
@@ -156,14 +156,13 @@ def score_jobs(config, skills_path='skills_flat.json', dry_run=False, show=None)
     """Score visible jobs and save them to jobs.ats_score_embed. Returns {job_id: score}."""
     profile = skill_profile(load_skills(skills_path))
     jobs_table = config['jobs_tablename']
-    conn = create_connection(config)
+    conn = open_db(config)
     if conn is None:
         raise ValueError("Cannot create the database connection.")
     try:
-        try:
-            jobs = group_lines(read_visible_job_item_matches(conn, jobs_table))
-        except sqlite3.OperationalError as e:
-            raise ValueError(f"Could not read job_items/matches ({e}); run embedder.py first.")
+        jobs = group_lines(read_visible_job_item_matches(conn, jobs_table))
+        if not jobs:
+            print("No job_items lines for visible jobs; run embedder.py first.")
         scores = {job_id: score for job_id, lines in jobs.items()
                   if (score := score_job(lines, profile)) is not None}
         if not dry_run:

@@ -1,7 +1,7 @@
 """
 Historical run: split the job_description text of every job already in the database into
 responsibilities / requirements / preferences, and save them in the job_details table.
-Then hide (hidden = 1) jobs whose requirements ask for a security clearance or US citizenship.
+Then hide (hidden = 1) jobs whose description asks for a security clearance or US citizenship.
 
   python hist_run.py               # uses config.json
   python hist_run.py other.json
@@ -11,15 +11,15 @@ Then hide (hidden = 1) jobs whose requirements ask for a security clearance or U
 import re
 import sys
 
-from db import (create_connection, hide_jobs, read_visible_job_descriptions, read_visible_job_requirements,
-                upsert_job_details)
+from db import hide_jobs, read_visible_job_descriptions, read_visible_job_texts, upsert_job_details
+from schema import open_db
 from job_parser import parse_job_text
 from main import load_config
 
 
 def hist_run(config):
     jobs_tablename = config['jobs_tablename']
-    conn = create_connection(config)
+    conn = open_db(config)
     if conn is None:
         print("Error! cannot create the database connection.")
         return 0
@@ -50,15 +50,21 @@ CLEARANCE = re.compile(r"ts/sci|ts/sc\b|top secret|\bsecret\b.{0,40}clearance|se
 CITIZENSHIP = re.compile(r"(\bu\.?\s?s\.?|united states|american) citizen|citizenship")
 # Sentences that also accept permanent residents are fine ("U.S. Person" includes lawful permanent residents)
 PERMANENT_RESIDENT_OK = re.compile(r"permanent (u\.?\s?s\.? )?residen|green card|\bu\.?\s?s\.? persons?\b|lawful(ly)? permanent|\blpr\b")
-NOT_REQUIRED = re.compile(r"desired|preferred|is a plus|nice to have|not required|\bbonus\b")
+NOT_REQUIRED = re.compile(r"desired|preferred|preference given|is a plus|nice to have|not required|\bbonus\b")
+# Company boilerplate that mentions citizenship or clearances without requiring them: EEO statements
+# ("without regard to ... citizenship"), background-check and fair-chance notices
+BOILERPLATE = re.compile(r"without regard to|regardless of|discriminat|equal (employment )?opportunit"
+                         r"|protected (veteran|characteristic|status)|arrest or conviction|background (check|investigation)")
+# Labels such as "Security Clearance Type:" (the answer, often "Not Required", is on the next line)
+LABEL = re.compile(r":$|^work authorization\s*/\s*security clearance$")
 
 
-def clearance_or_citizenship_requirement(requirements):
-    # Returns the sentence that requires a clearance or US citizenship, or None
+def clearance_or_citizenship_requirement(text):
+    # Returns the sentence of a job description (or its requirements) that requires a clearance or US citizenship, or None
     # Split into sentences on new lines, ';' and '. ' after a lowercase word (so "U.S. citizen" stays together)
-    for sentence in re.split(r"\n|;|(?<=[a-z]{2}\.)\s+", requirements or ''):
+    for sentence in re.split(r"\n|;|(?<=[a-z]{2}\.)\s+", text or ''):
         text = sentence.strip().lstrip('-•* ').lower()
-        if not text or NOT_REQUIRED.search(text):
+        if not text or NOT_REQUIRED.search(text) or BOILERPLATE.search(text) or LABEL.search(text):
             continue
         if CLEARANCE.search(text):
             return sentence.strip()
@@ -68,16 +74,17 @@ def clearance_or_citizenship_requirement(requirements):
 
 
 def hide_clearance_jobs(config, dry_run=False):
-    # Set hidden = 1 for visible jobs whose job_details requirements need a security clearance or US citizenship
+    # Set hidden = 1 for visible jobs whose description needs a security clearance or US citizenship.
+    # Reads the whole description, so it works before the jobs are split into job_details.
     jobs_tablename = config['jobs_tablename']
-    conn = create_connection(config)
+    conn = open_db(config)
     if conn is None:
         print("Error! cannot create the database connection.")
         return []
 
     to_hide = []
-    for job_id, title, company, requirements in read_visible_job_requirements(conn, jobs_tablename):
-        reason = clearance_or_citizenship_requirement(requirements)
+    for job_id, title, company, description in read_visible_job_texts(conn, jobs_tablename):
+        reason = clearance_or_citizenship_requirement(description)
         if reason:
             to_hide.append(job_id)
             print(f"{'Would hide' if dry_run else 'Hiding'} job {job_id}: {title} at {company} -- {reason[:120]}")

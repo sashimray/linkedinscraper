@@ -1,12 +1,13 @@
 """
 Run the whole pipeline in order, stopping at the first step that fails:
 
-  1. scrape       main.py: new LinkedIn jobs -> jobs table, sections from the job page -> job_details
-  2. parse        job_details rows for visible jobs that don't have one yet (from the stored description text);
-                  with --llm, also the jobs the rules couldn't split (llm_sections.py)
-  3. hide         hist_run.py: hide (hidden = 1) jobs whose requirements need a security clearance or US citizenship
-  4. embed        embedder.py: job_details lines -> job_items, embeddings and skill matches
-  5. score        ats_score.py: jobs.ats_score from resume.json
+  1. scrape       main.py: new LinkedIn jobs -> jobs table (job_description text and job_description_html)
+  2. hide         hist_run.py: hide (hidden = 1) visible jobs whose description needs a security clearance or US citizenship
+  3. parse        visible jobs without a job_details row -> job_details, split from job_description_html
+                  (or the text, for jobs scraped before the HTML was stored); sections_parsed = 1 when both
+                  responsibilities and requirements were found, else 0. With --llm, the LLM also fills the 0s (= 2)
+  4. score        ats_score.py: jobs.ats_score from resume.json
+  5. embed        embedder.py: job_details lines -> job_items, embeddings and skill matches (needed by score_embed)
   6. score_embed  ats_score_embed.py: jobs.ats_score_embed from the embedder matches and skills_flat.json
 
   python workflow.py                          # every step, config.json
@@ -25,17 +26,23 @@ DEFAULT_RESUME = 'resume.json'
 DEFAULT_SKILLS = 'skills_flat.json'
 
 
+def parse_job_sections(description, html):
+    """job_parser sections from the stored description HTML, or from the text when there is no HTML."""
+    from job_parser import parse_description_html, parse_job_text
+    return parse_description_html(html) if html else parse_job_text(description)
+
+
 def parse_missing_details(config):
     """Rule-based job_details rows for visible jobs that have none. Returns how many were saved."""
-    from db import create_connection, read_jobs_without_details, upsert_job_details
-    from job_parser import parse_job_text
+    from db import read_jobs_without_details, upsert_job_details
+    from schema import open_db
 
-    conn = create_connection(config)
+    conn = open_db(config)
     if conn is None:
         raise RuntimeError("Cannot create the database connection.")
     try:
-        rows = [(job_id, parse_job_text(description))
-                for job_id, description in read_jobs_without_details(conn, config['jobs_tablename'])]
+        rows = [(job_id, parse_job_sections(description, html))
+                for job_id, description, html in read_jobs_without_details(conn, config['jobs_tablename'])]
         if rows:
             upsert_job_details(conn, config['jobs_tablename'], rows)
     finally:
@@ -79,10 +86,10 @@ def step_score_embed(config, options):
 
 STEPS = {
     'scrape': step_scrape,
-    'parse': step_parse,
     'hide': step_hide,
-    'embed': step_embed,
+    'parse': step_parse,
     'score': step_score,
+    'embed': step_embed,
     'score_embed': step_score_embed,
 }
 

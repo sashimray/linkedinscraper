@@ -29,6 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from ats_score import split_lines
+from schema import create_embedder_tables
 
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 # bge-small puts loosely related lines at 0.75-0.78 ("8+ years of data engineering" vs "relational
@@ -43,34 +44,6 @@ LEAD_IN = re.compile(
     r"(?:experience|knowledge|familiarity|proficiency|expertise|understanding|"
     r"background|exposure)\s+(?:with|in|of|using|building|developing|designing)\s+",
     re.IGNORECASE)
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS job_items(
-    id INTEGER PRIMARY KEY,
-    job_id INTEGER NOT NULL,
-    kind TEXT NOT NULL,            -- requirement | preference
-    idx INTEGER NOT NULL,          -- order within the job and kind
-    text TEXT NOT NULL,
-    text_hash TEXT NOT NULL,
-    model TEXT,
-    embedding BLOB,                -- float32, L2-normalized
-    UNIQUE(job_id, kind, idx)
-);
-CREATE TABLE IF NOT EXISTS skill_vectors(
-    name TEXT PRIMARY KEY,
-    text_hash TEXT NOT NULL,
-    model TEXT NOT NULL,
-    embedding BLOB NOT NULL
-);
-CREATE TABLE IF NOT EXISTS matches(
-    job_item_id INTEGER NOT NULL,
-    skill TEXT NOT NULL,
-    method TEXT NOT NULL,          -- alias | embed
-    similarity REAL NOT NULL,
-    PRIMARY KEY(job_item_id, skill)
-);
-"""
-
 
 def sha1(s):
     return hashlib.sha1(s.encode("utf-8")).hexdigest()[:16]
@@ -296,7 +269,7 @@ def run(db_path, skills_path, model=DEFAULT_MODEL, threshold=DEFAULT_THRESHOLD, 
     skills = load_skills(skills_path)
     con = sqlite3.connect(db_path)
     try:
-        con.executescript(SCHEMA)
+        create_embedder_tables(con)
         emb = LazyEmbedder(model)
         n_jobs = sync_items(con, jobs_table, id_col, req_col, pref_col)
         tag = f"{model}|{PREP_VERSION}"

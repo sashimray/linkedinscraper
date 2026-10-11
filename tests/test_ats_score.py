@@ -10,6 +10,7 @@ sys.path.insert(0, ROOT)
 
 import ats_score
 import db
+import schema
 from ats_score import (build_report, degree_fields, degree_level, explain_job, explain_line, find_skills, keyword_words,
                        keywords, load_resume, load_resume_profile, match_line, required_years, score_job, score_jobs,
                        section_credits, similar_skills, split_lines, write_report, years_of_experience)
@@ -208,7 +209,7 @@ def make_db(tmp, with_score_column=True):
     conn.execute(f"CREATE TABLE jobs (id INTEGER PRIMARY KEY, title TEXT, company TEXT, hidden INTEGER{score_col})")
     conn.executemany("INSERT INTO jobs (id, title, hidden) VALUES (?, ?, ?)",
                      [(1, "A", 0), (2, "B", 1), (3, "C", 0), (4, "D", 0), (5, "E", None)])
-    db.create_job_details_table(conn, "jobs")
+    schema.create_job_details_table(conn, "jobs")
     conn.executemany("INSERT INTO job_details (job_id, requirements, preferences) VALUES (?, ?, ?)", [
         (1, "- 5+ years of Java\n- Experience with Golang", "- Kafka a plus"),  # 57
         (2, "- Java", ""),                                                       # hidden
@@ -234,10 +235,11 @@ def test_db_read_visible_job_sections():
         conn.close()
 
 
-def test_db_update_ats_scores_adds_missing_column():
+def test_db_update_ats_scores_after_init_db_adds_column():
     with tempfile.TemporaryDirectory() as tmp:
         path = make_db(tmp, with_score_column=False)
         conn = sqlite3.connect(path)
+        schema.init_db(conn, "jobs")  # databases from before the score column get it here, not in db.py
         db.update_ats_scores(conn, "jobs", {1: 80, 3: 20})
         conn.close()
         assert scores(path) == {1: 80, 2: 0, 3: 20, 4: 0, 5: 0}

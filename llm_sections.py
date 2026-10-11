@@ -12,7 +12,8 @@ and saves them to job_details with sections_parsed = 2. Run it separately from t
 import argparse
 import sys
 
-from db import create_connection, read_jobs_without_sections, upsert_job_details
+from db import read_jobs_without_sections, upsert_job_details
+from schema import open_db
 from main import load_config
 from resumekit.application_kit import ApplicationKit, ApplicationKitError, DEFAULT_CLAUDE_MODEL, DEFAULT_OLLAMA_MODEL
 
@@ -49,7 +50,7 @@ def extract_sections(kit, job):
 
 
 def run(config, kit, table_name, limit=None):
-    conn = create_connection(config)
+    conn = open_db(config)
     jobs = read_jobs_without_sections(conn, table_name, limit)
     print(f"{len(jobs)} jobs in the {table_name} table need sections")
     done = failed = 0
