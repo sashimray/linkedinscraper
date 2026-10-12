@@ -8,10 +8,10 @@ from datetime import date
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import ats_score
-import db
-import schema
-from ats_score import (build_report, degree_fields, degree_level, explain_job, explain_line, find_skills, keyword_words,
+import workflow.score.ats_score as ats_score
+import db.queries as db
+import db.schema as schema
+from workflow.score.ats_score import (build_report, degree_fields, degree_level, explain_job, explain_line, find_skills, keyword_words,
                        keywords, load_resume, load_resume_profile, match_line, required_years, score_job, score_jobs,
                        section_credits, similar_skills, split_lines, write_report, years_of_experience)
 
@@ -242,7 +242,7 @@ def test_db_update_ats_scores_after_init_db_adds_column():
         schema.init_db(conn, "jobs")  # databases from before the score column get it here, not in db.py
         db.update_ats_scores(conn, "jobs", {1: 80, 3: 20})
         conn.close()
-        assert scores(path) == {1: 80, 2: 0, 3: 20, 4: 0, 5: 0}
+        assert scores(path) == {1: 80, 2: None, 3: 20, 4: None, 5: None}  # new score columns default to NULL
 
 
 def test_score_jobs():
@@ -256,7 +256,8 @@ def test_score_jobs():
         assert score_jobs(config, resume_path, dry_run=True) == {1: 57, 5: 100}
         assert set(scores(path).values()) == {0}                       # dry run saves nothing
         assert score_jobs(config, resume_path) == {1: 57, 5: 100}
-        assert scores(path) == {1: 57, 2: 0, 3: 0, 4: 0, 5: 100}
+        # visible jobs without a score are reset to NULL (3: nothing checkable, 4: no job_details); hidden 2 is left alone
+        assert scores(path) == {1: 57, 2: 0, 3: None, 4: None, 5: 100}
 
 
 def test_write_report():

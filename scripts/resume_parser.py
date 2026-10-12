@@ -2,8 +2,8 @@
 """Flatten resume.json skills into a scoring-ready skills file.
 
 Usage:
-    python migrate_skills.py resume.json                 # writes skills_flat.json
-    python migrate_skills.py resume.json -o my_skills.json
+    python -m scripts.resume_parser resume.json                 # writes skills_flat.json
+    python -m scripts.resume_parser resume.json -o my_skills.json
 
 What it does:
   - splits compound items ("AWS (MSK / Kafka, EMR)") into atomic skills

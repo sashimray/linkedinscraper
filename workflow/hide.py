@@ -1,46 +1,18 @@
 """
-Historical run: split the job_description text of every job already in the database into
-responsibilities / requirements / preferences, and save them in the job_details table.
-Then hide (hidden = 1) jobs whose description asks for a security clearance or US citizenship.
+The workflow's hide step: hide (hidden = 1) visible jobs whose description asks for a security clearance or
+US citizenship. Runs before the parse step, on the whole description.
 
-  python hist_run.py               # uses config.json
-  python hist_run.py other.json
-  python hist_run.py --dry-run     # list the jobs that would be hidden without changing them
+  python -m workflow.hide               # uses config.json
+  python -m workflow.hide other.json
+  python -m workflow.hide --dry-run     # list the jobs that would be hidden without changing them
 """
 
 import re
 import sys
 
-from db import hide_jobs, read_visible_job_descriptions, read_visible_job_texts, upsert_job_details
-from schema import open_db
-from job_parser import parse_job_text
-from main import load_config
-
-
-def hist_run(config):
-    jobs_tablename = config['jobs_tablename']
-    conn = open_db(config)
-    if conn is None:
-        print("Error! cannot create the database connection.")
-        return 0
-
-    jobs = read_visible_job_descriptions(conn, jobs_tablename)
-    print(f"Parsing {len(jobs)} jobs from the {jobs_tablename} table")
-
-    rows = []
-    parsed = 0
-    for job_id, job_description in jobs:
-        sections = parse_job_text(job_description)
-        parsed += sections['sections_parsed']
-        rows.append((job_id, sections))
-
-    upsert_job_details(conn, jobs_tablename, rows)
-    conn.close()
-
-    print(f"Saved {len(rows)} jobs to the job_details table; "
-          f"{parsed} had both responsibilities and requirements, {len(rows) - parsed} are missing one or both "
-          f"(llm_sections.py can fill those in; jobs it already filled were left as they are)")
-    return len(rows)
+from db.queries import hide_jobs, read_visible_job_texts
+from db.schema import open_db
+from config import load_config
 
 
 # A security clearance needs US citizenship, so any required clearance counts, including "ability to obtain" one
@@ -99,7 +71,4 @@ def hide_clearance_jobs(config, dry_run=False):
 if __name__ == "__main__":
     args = [arg for arg in sys.argv[1:] if arg != '--dry-run']
     config_file = args[0] if args else 'config.json'  # default config file
-    config = load_config(config_file)
-
-    hist_run(config)
-    hide_clearance_jobs(config, dry_run='--dry-run' in sys.argv)
+    hide_clearance_jobs(load_config(config_file), dry_run='--dry-run' in sys.argv)

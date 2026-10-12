@@ -10,9 +10,9 @@ Steps:
        - embedding similarity (concept skills only)  similarity = cosine, method "embed"
 
 Usage:
-  python embedder.py data/my_database.db skills_flat.json
-  python embedder.py data/my_database.db skills_flat.json --threshold 0.80
-  python embedder.py data/my_database.db skills_flat.json --show 42     # inspect one job
+  python -m workflow.score.embedder data/jobs_database.db skills_flat.json
+  python -m workflow.score.embedder data/jobs_database.db skills_flat.json --threshold 0.80
+  python -m workflow.score.embedder data/jobs_database.db skills_flat.json --show 42     # inspect one job
 
 Requires: numpy, sentence-transformers (the latter only when embedding).
 Weights are NOT applied here; ats_score_embed.py turns matches into jobs.ats_score_embed.
@@ -28,8 +28,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ats_score import split_lines
-from schema import create_embedder_tables
+from workflow.score.ats_score import split_lines
+from db.schema import create_embedder_tables
 
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 # bge-small puts loosely related lines at 0.75-0.78 ("8+ years of data engineering" vs "relational

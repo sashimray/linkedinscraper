@@ -8,10 +8,11 @@ from types import SimpleNamespace
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import db
-import schema
-import embedder
-from workflow import STEPS, parse_job_sections, parse_missing_details, run_workflow, selected_steps
+import db.queries as db
+import db.schema as schema
+import workflow.score.embedder as embedder
+from workflow.parse import parse_job_sections, parse_missing_details
+from workflow.pipeline import STEPS, run_workflow, selected_steps
 
 DESCRIPTION = "About the role\nRequirements:\n- 5+ years of Python\n- Kubernetes experience\nWhat you'll do:\n- Build services"
 
@@ -130,9 +131,12 @@ def test_workflow_steps_run_end_to_end_without_scrape():
     assert con.execute('SELECT hidden FROM jobs WHERE id = 5').fetchone() == (1,)  # clearance job hidden
     # hidden before the parse step, so it is neither parsed nor scored
     assert con.execute('SELECT COUNT(*) FROM job_details WHERE job_id = 5').fetchone() == (0,)
-    assert con.execute('SELECT ats_score, ats_score_embed FROM jobs WHERE id = 5').fetchone() == (0, 0)
-    scores = dict(con.execute('SELECT id, ats_score_embed FROM jobs WHERE hidden = 0 AND id IN (1, 4)').fetchall())
-    assert scores[1] > 0 and scores[4] == 0  # job 4 only asks for Go
+    assert con.execute('SELECT ats_score, ats_score_embed, overall_score FROM jobs WHERE id = 5').fetchone() == (None, None, None)
+    scores = {job_id: (ats, embed, overall) for job_id, ats, embed, overall in
+              con.execute('SELECT id, ats_score, ats_score_embed, overall_score FROM jobs WHERE id IN (1, 4, 6)')}
+    assert scores[1][1] > 0 and scores[1][2] == round((scores[1][0] + scores[1][1]) / 2)
+    assert scores[4] == (None, None, None)  # its only line ('Go') isn't a skill the scorers know: not scored
+    assert scores[6] == (0, 0, 0)           # asks only for Rust: scored, and 0
     assert con.execute('SELECT COUNT(*) FROM jobs WHERE ats_score > 0').fetchone()[0] >= 1
 
 

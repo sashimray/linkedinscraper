@@ -8,7 +8,7 @@ sys.path.insert(0, ROOT)
 
 import pandas as pd
 
-import schema
+import db.schema as schema
 
 
 def tables(conn):
@@ -48,7 +48,26 @@ def test_init_db_migrates_old_tables_and_is_idempotent():
     assert set(schema.JOBS_EXTRA_COLUMNS) <= set(schema.table_columns(conn, 'jobs'))
     assert 'sections_parsed' in schema.table_columns(conn, schema.JOB_DETAILS)
     conn.execute("INSERT INTO jobs (id, title) VALUES (1, 'a')")
-    assert conn.execute('SELECT ats_score, ats_score_embed FROM jobs').fetchone() == (0, 0)
+    assert conn.execute('SELECT ats_score, ats_score_embed, overall_score FROM jobs').fetchone() == (None, None, None)
+
+
+def test_overall_score_is_the_rounded_average_of_both_scores():
+    conn = sqlite3.connect(':memory:')
+    conn.execute('CREATE TABLE jobs (id INTEGER PRIMARY KEY, hidden INTEGER)')
+    schema.init_db(conn, 'jobs')
+    conn.executemany('INSERT INTO jobs (id, ats_score, ats_score_embed) VALUES (?, ?, ?)',
+                     [(1, 70, 50), (2, 71, 50), (3, 80, None), (4, None, None), (5, 0, 0)])
+    assert dict(conn.execute('SELECT id, overall_score FROM jobs')) == {1: 60, 2: 61, 3: None, 4: None, 5: 0}
+    conn.execute('UPDATE jobs SET ats_score_embed = 90 WHERE id = 3')  # follows the scores, never stale
+    assert conn.execute('SELECT overall_score FROM jobs WHERE id = 3').fetchone() == (85,)
+
+
+def test_init_db_sees_generated_columns_so_reruns_dont_fail():
+    conn = sqlite3.connect(':memory:')
+    conn.execute('CREATE TABLE jobs (id INTEGER PRIMARY KEY)')
+    schema.init_db(conn, 'jobs')
+    assert 'overall_score' in schema.table_columns(conn, 'jobs')  # PRAGMA table_info would miss it
+    schema.init_db(conn, 'jobs')  # would raise "duplicate column name" if it were missed
 
 
 def test_prepare_jobs_table_creates_with_index_then_adds_columns():

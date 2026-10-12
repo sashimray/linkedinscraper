@@ -2,9 +2,9 @@
 Fetch one LinkedIn job page and show the description HTML that would be stored as job_description_html,
 and whether parsing that stored HTML gives the same sections as parsing the live page. Nothing is saved to the database.
 
-  python preview_job_html.py https://www.linkedin.com/jobs/view/4478314628/
-  python preview_job_html.py 4478314628 --pretty          # indented HTML
-  python preview_job_html.py 4478314628 --out output/      # also write job_<id>.html to open in a browser
+  python -m scripts.preview_job_html https://www.linkedin.com/jobs/view/4478314628/
+  python -m scripts.preview_job_html 4478314628 --pretty          # indented HTML
+  python -m scripts.preview_job_html 4478314628 --out output/      # also write job_<id>.html to open in a browser
 """
 import argparse
 import html
@@ -15,9 +15,10 @@ from collections import Counter
 
 from bs4 import BeautifulSoup
 
-from job_parser import SECTION_FIELDS, description_html, parse_description_html, parse_job_details
-from main import get_with_retry, load_config
-from single_link_run import job_url
+from workflow.scrape.job_parser import SECTION_FIELDS, description_html, parse_description_html, parse_job_details
+from config import load_config
+from workflow.scrape.scraper import get_with_retry
+from scripts.single_link_run import job_url
 
 
 def preview(soup):

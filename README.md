@@ -30,37 +30,47 @@ If you are using this application, please be aware that LinkedIn does not allow 
 1. Clone the repository to your local machine.
 2. Install the required packages using pip: `pip install -r requirements.txt`
 3. Create a `config.json` file in the root directory of the project. See the `config.json` section below for details on the configuration options. Config_example.json is provided as an example, feel free to use it as a template.
-4. Run the scraper using the command `python main.py`. Note: run this first first to populate the database with job postings prior to running app.py.
-4. Run the application using the command `python app.py`.
-5. Open a web browser and navigate to `http://127.0.0.1:5000` to view the job postings.
+4. Run the workflow from the repository root with `python -m workflow` (scrape, hide, parse and score). Run it first to populate the database before starting the app.
+5. Run the application with `python -m app`.
+6. Open a web browser and navigate to `http://127.0.0.1:5001` to view the job postings.
 
 ### Usage
 
-The application consists of two main components: the scraper and the web interface.
+The application consists of two main components: the workflow (scraper and scoring) and the web interface.
+Run every command from the repository root.
+
+```
+app/        Flask UI (python -m app): server.py, job_match.py, templates/, static/
+db/         schema.py (tables, CREATE/ALTER, open_db) and queries.py (reads, inserts, updates)
+workflow/   the pipeline (python -m workflow): scrape/, hide.py, parse.py, llm_sections.py, score/
+scripts/    tools outside the pipeline: single_link_run, preview_job_html, reparse_all, resume_parser
+config.py   load_config(), shared by all of the above
+```
 
 #### Scraper
 
-The scraper is implemented in `main.py`. It scrapes job postings from LinkedIn based on the search queries and filters specified in the `config.json` file. The scraper removes duplicate and irrelevant job postings based on the specified keywords and stores the remaining job postings in a SQLite database.
+The scraper is implemented in `workflow/scrape/scraper.py`. It scrapes job postings from LinkedIn based on the search queries and filters specified in the `config.json` file. The scraper removes duplicate and irrelevant job postings based on the specified keywords and stores the remaining job postings in a SQLite database.
 
-To run the scraper, execute the following command:
+To run the whole workflow (scrape, hide clearance jobs, parse, score), or only the scraper:
 
 ```
-python main.py
+python -m workflow
+python -m workflow --only scrape
 ```
 
 #### Web Interface
 
-The web interface is implemented using Flask in `app.py`. It provides a simple interface to view the job postings stored in the SQLite database. Users can mark job postings as applied, rejected, interview, or hidden, and the changes will be saved in the database.
+The web interface is implemented using Flask in `app/server.py`. It provides a simple interface to view the job postings stored in the SQLite database. Users can mark job postings as applied, rejected, interview, or hidden, and the changes will be saved in the database.
 
 When the job is marked as "applied" it will be highlighted in light blue so that it's obvious at a glance which jobs are applied to. "Rejecetd" will mark the job in red, whereas "Interview" will mark the job in green. Upon clicking "Hide" the job will dissappear from the list. There's currently no functionality to reverse these actions (i.e. unhine, un-apply, etc). To reverse it you'd have to go to the database and change values in applied, hidden, interview, or rejected columns.
 
 To run the web interface, execute the following command:
 
 ```
-python app.py
+python -m app
 ```
 
-Then, open a web browser and navigate to `http://127.0.0.1:5000` to view the job postings.
+Then, open a web browser and navigate to `http://127.0.0.1:5001` to view the job postings.
 
 ### Configuration
 

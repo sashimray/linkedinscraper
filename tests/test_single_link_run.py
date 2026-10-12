@@ -9,8 +9,8 @@ sys.path.insert(0, ROOT)
 
 from bs4 import BeautifulSoup
 
-import single_link_run
-from single_link_run import job_url, main, run
+import scripts.single_link_run as single_link_run
+from scripts.single_link_run import job_url, main, run
 
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
 JOB_ID = "4476740047"  # CODEplus fixture, also checked in test_job_parser.py

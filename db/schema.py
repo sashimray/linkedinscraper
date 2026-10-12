@@ -11,7 +11,7 @@ Every table the project uses, and the statements that create and migrate them. d
 Entry points call open_db(config) (or init_db on an open connection) before using the database.
 """
 
-from db import create_connection
+from db.queries import create_connection
 
 JOB_DETAILS = 'job_details'
 JOB_ITEMS = 'job_items'
@@ -24,8 +24,12 @@ JOBS_EXTRA_COLUMNS = {
     'job_description_html': 'TEXT',
     'cover_letter': 'TEXT',
     'resume': 'TEXT',
-    'ats_score': 'INT DEFAULT 0',
-    'ats_score_embed': 'INT DEFAULT 0',
+    'ats_score': 'INT',          # NULL = not scored (databases from before this keep their DEFAULT 0 columns)
+    'ats_score_embed': 'INT',
+    # Average of the two scores, computed by SQLite on read so it never goes stale; NULL unless both are scored.
+    # Must come after the two score columns (ALTER TABLE only allows VIRTUAL generated columns).
+    'overall_score': ('INT GENERATED ALWAYS AS (CASE WHEN ats_score IS NOT NULL AND ats_score_embed IS NOT NULL '
+                      'THEN CAST(ROUND((ats_score + ats_score_embed) / 2.0) AS INT) END) VIRTUAL'),
 }
 
 # Data types mapping from pandas to SQLite (unknown dtypes fall back to TEXT)
@@ -71,7 +75,8 @@ def sqlite_type(df, column):
 
 
 def table_columns(conn, table_name):
-    return [row[1] for row in conn.execute(f'PRAGMA table_info("{table_name}")')]
+    # table_xinfo, not table_info: table_info leaves out generated columns such as overall_score
+    return [row[1] for row in conn.execute(f'PRAGMA table_xinfo("{table_name}")')]
 
 
 def table_exists(conn, table_name):

@@ -1,0 +1,11 @@
+# Claude.md
+- Never send secrets, credentials, PII, database contents, or sensitive user data to the Claude API.
+- Sanitize, redact, and minimize all data before any API request.
+- Always check and report token usage; avoid unnecessary context and prompts.
+- Follow Liskov Substitution Principle (LSP) and SOLID principles throughout the codebase.
+- Use Python, Flask, and SQLite idiomatically and securely.
+- Validate inputs and handle errors explicitly.
+- Keep modules focused, interfaces minimal, and dependencies loosely coupled.
+- Never log sensitive data or API credentials.
+- Review security, privacy, token usage, and architectural compliance before completing changes.
+- Always write unit tests for any funtion created

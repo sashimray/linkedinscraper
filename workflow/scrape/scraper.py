@@ -1,5 +1,4 @@
 import requests
-import json
 import sys
 from bs4 import BeautifulSoup
 import time as tm
@@ -9,15 +8,11 @@ import pandas as pd
 from urllib.parse import quote
 from langdetect import detect
 from langdetect.lang_detect_exception import LangDetectException
-from db import insert_records, read_table
-from schema import open_db, prepare_jobs_table, table_exists
-from job_parser import description_html, parse_company_info
+from config import load_config
+from db.queries import insert_records, read_table
+from db.schema import open_db, prepare_jobs_table, table_exists
+from workflow.scrape.job_parser import description_html, parse_company_info
 
-
-def load_config(file_name):
-    # Load the config file
-    with open(file_name) as f:
-        return json.load(f)
 
 def get_with_retry(url, config, retries=3, delay=1):
     # Get the URL with retries and delay

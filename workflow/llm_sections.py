@@ -5,16 +5,16 @@ Reads job_description text for visible jobs whose job_details row has sections_p
 job_details row yet), asks an LLM to pull out the responsibilities, requirements and preferred qualifications,
 and saves them to job_details with sections_parsed = 2. Run it separately from the scraper:
 
-  python llm_sections.py                       # local Ollama (llama3.1:8b)
-  python llm_sections.py --provider claude --limit 20
+  python -m workflow.llm_sections                       # local Ollama (llama3.1:8b)
+  python -m workflow.llm_sections --provider claude --limit 20
 """
 
 import argparse
 import sys
 
-from db import read_jobs_without_sections, upsert_job_details
-from schema import open_db
-from main import load_config
+from db.queries import read_jobs_without_sections, upsert_job_details
+from db.schema import open_db
+from config import load_config
 from resumekit.application_kit import ApplicationKit, ApplicationKitError, DEFAULT_CLAUDE_MODEL, DEFAULT_OLLAMA_MODEL
 
 SECTION_FIELDS = ('responsibilities', 'requirements', 'preferred_qualifications')

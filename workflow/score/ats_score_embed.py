@@ -14,19 +14,19 @@ Each line counts with the weight of its best-matching skill (a missed line count
 so tech lines weigh more than concept lines. Score = 85% requirements + 15% preferences, like ats_score.py.
 Runs locally only; nothing is sent to an API.
 
-  python embedder.py data/my_database.db skills_flat.json    # first: refresh job_items and matches
-  python ats_score_embed.py                                   # uses config.json and skills_flat.json
-  python ats_score_embed.py --dry-run --show 42
+  python -m workflow.score.embedder data/jobs_database.db skills_flat.json  # first: refresh job_items and matches
+  python -m workflow.score.ats_score_embed                    # uses config.json and skills_flat.json
+  python -m workflow.score.ats_score_embed --dry-run --show 42
 """
 
 import argparse
 import sys
 
-from ats_score import (ANY_OF, PREFERENCES_WEIGHT, REQUIREMENTS_WEIGHT, degree_level, find_skills, keyword_words,
+from workflow.score.ats_score import (ANY_OF, PREFERENCES_WEIGHT, REQUIREMENTS_WEIGHT, degree_level, find_skills, keyword_words,
                        required_years)
-from db import read_visible_job_item_matches, update_ats_scores
-from schema import open_db
-from embedder import DEFAULT_THRESHOLD, load_skills
+from db.queries import read_visible_job_item_matches, replace_ats_scores
+from db.schema import open_db
+from workflow.score.embedder import DEFAULT_THRESHOLD, load_skills
 
 SCORE_COLUMN = 'ats_score_embed'
 EMBED_FULL = 0.88           # embedding similarity that earns full credit
@@ -166,7 +166,7 @@ def score_jobs(config, skills_path='skills_flat.json', dry_run=False, show=None)
         scores = {job_id: score for job_id, lines in jobs.items()
                   if (score := score_job(lines, profile)) is not None}
         if not dry_run:
-            update_ats_scores(conn, jobs_table, scores, SCORE_COLUMN)
+            replace_ats_scores(conn, jobs_table, scores, SCORE_COLUMN)
     finally:
         conn.close()
 
@@ -185,7 +185,7 @@ def main(argv=None):
     parser.add_argument('--show', type=int, metavar='JOB_ID', help="print line-by-line credits for one job")
     args = parser.parse_args(argv)
 
-    from main import load_config  # here so tests can import this module without the scraper's dependencies
+    from config import load_config  # here so tests can import this module without the scraper's dependencies
     try:
         score_jobs(load_config(args.config), args.skills, args.dry_run, args.show)
     except ValueError as e:

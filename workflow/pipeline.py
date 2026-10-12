@@ -1,19 +1,19 @@
 """
 Run the whole pipeline in order, stopping at the first step that fails:
 
-  1. scrape       main.py: new LinkedIn jobs -> jobs table (job_description text and job_description_html)
-  2. hide         hist_run.py: hide (hidden = 1) visible jobs whose description needs a security clearance or US citizenship
-  3. parse        visible jobs without a job_details row -> job_details, split from job_description_html
+  1. scrape       workflow/scrape/scraper.py: new LinkedIn jobs -> jobs table (job_description text and job_description_html)
+  2. hide         workflow/hide.py: hide (hidden = 1) visible jobs whose description needs a security clearance or US citizenship
+  3. parse        workflow/parse.py: visible jobs without a job_details row -> job_details, split from job_description_html
                   (or the text, for jobs scraped before the HTML was stored); sections_parsed = 1 when both
                   responsibilities and requirements were found, else 0. With --llm, the LLM also fills the 0s (= 2)
-  4. score        ats_score.py: jobs.ats_score from resume.json
-  5. embed        embedder.py: job_details lines -> job_items, embeddings and skill matches (needed by score_embed)
-  6. score_embed  ats_score_embed.py: jobs.ats_score_embed from the embedder matches and skills_flat.json
+  4. score        workflow/score/ats_score.py: jobs.ats_score from resume.json
+  5. embed        workflow/score/embedder.py: job_details lines -> job_items, embeddings and skill matches (needed by score_embed)
+  6. score_embed  workflow/score/ats_score_embed.py: jobs.ats_score_embed from the embedder matches and skills_flat.json
 
-  python workflow.py                          # every step, config.json
-  python workflow.py --skip scrape            # rescore what's already in the database
-  python workflow.py --only embed --only score_embed
-  python workflow.py --llm ollama             # also fill unsplit jobs with the local LLM
+  python -m workflow                          # every step, config.json
+  python -m workflow --skip scrape            # rescore what's already in the database
+  python -m workflow --only embed --only score_embed
+  python -m workflow --llm ollama             # also fill unsplit jobs with the local LLM
 
 Everything runs locally except the scrape and, with --llm claude, the job descriptions sent to the Claude API.
 """
@@ -26,61 +26,37 @@ DEFAULT_RESUME = 'resume.json'
 DEFAULT_SKILLS = 'skills_flat.json'
 
 
-def parse_job_sections(description, html):
-    """job_parser sections from the stored description HTML, or from the text when there is no HTML."""
-    from job_parser import parse_description_html, parse_job_text
-    return parse_description_html(html) if html else parse_job_text(description)
-
-
-def parse_missing_details(config):
-    """Rule-based job_details rows for visible jobs that have none. Returns how many were saved."""
-    from db import read_jobs_without_details, upsert_job_details
-    from schema import open_db
-
-    conn = open_db(config)
-    if conn is None:
-        raise RuntimeError("Cannot create the database connection.")
-    try:
-        rows = [(job_id, parse_job_sections(description, html))
-                for job_id, description, html in read_jobs_without_details(conn, config['jobs_tablename'])]
-        if rows:
-            upsert_job_details(conn, config['jobs_tablename'], rows)
-    finally:
-        conn.close()
-    print(f"Parsed {len(rows)} jobs that had no job_details row")
-    return len(rows)
-
-
 def step_scrape(_config, options):
-    from main import main as scrape
+    from workflow.scrape.scraper import main as scrape
     scrape(options.config)
 
 
 def step_parse(config, options):
+    from workflow.parse import parse_missing_details
     parse_missing_details(config)
     if options.llm:
-        import llm_sections
+        import workflow.llm_sections as llm_sections
         from resumekit.application_kit import ApplicationKit
         llm_sections.run(config, ApplicationKit(options.llm, options.llm_model), config['jobs_tablename'])
 
 
 def step_hide(config, _options):
-    from hist_run import hide_clearance_jobs
+    from workflow.hide import hide_clearance_jobs
     hide_clearance_jobs(config)
 
 
 def step_embed(config, options):
-    import embedder
+    import workflow.score.embedder as embedder
     embedder.run(config['db_path'], options.skills, options.model or embedder.DEFAULT_MODEL)
 
 
 def step_score(config, options):
-    import ats_score
+    import workflow.score.ats_score as ats_score
     ats_score.score_jobs(config, options.resume)
 
 
 def step_score_embed(config, options):
-    import ats_score_embed
+    import workflow.score.ats_score_embed as ats_score_embed
     ats_score_embed.score_jobs(config, options.skills)
 
 
@@ -147,7 +123,7 @@ def main(argv=None):
         steps = selected_steps(options.only, options.skip)
     except ValueError as e:
         parser.error(str(e))
-    from main import load_config
+    from config import load_config
     try:
         config = load_config(options.config)
     except (OSError, ValueError) as e:

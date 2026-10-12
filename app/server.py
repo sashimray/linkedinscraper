@@ -1,21 +1,27 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
+import re
 import sqlite3
-import json
 import openai
 from pdfminer.high_level import extract_text
 from flask_cors import CORS
 from functools import lru_cache
 
-from db import read_ranked_jobs
-from schema import init_db
-from job_match import job_match, load_profiles
-
-def load_config(file_name):
-    # Load the config file
-    with open(file_name) as f:
-        return json.load(f)
+from config import load_config
+from db.queries import JOB_FLAGS, read_job, read_ranked_jobs, save_generated_text, update_job_flags
+from db.schema import init_db
+from app.job_match import job_match, load_profiles
 
 config = load_config('config.json')
+TABLE_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def jobs_table():
+    # config['jobs_tablename'] (default 'jobs'), checked because it is written into SQL
+    name = config.get('jobs_tablename', 'jobs')
+    if not isinstance(name, str) or not TABLE_NAME.match(name):
+        raise ValueError(f"Invalid jobs_tablename in config: {name!r}")
+    return name
+
 app = Flask(__name__)
 CORS(app)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -31,120 +37,81 @@ def read_pdf(file_path):
         print(f"An error occurred while reading the PDF: {e}")
         return None
 
-# db = load_config('config.json')['db_path']
-# try:
-#     api_key = load_config('config.json')['OpenAI_API_KEY']
-#     print("API key found")
-# except:
-#     print("No OpenAI API key found. Please add one to config.json")
-
-# try:
-#     gpt_model = load_config('config.json')['OpenAI_Model']
-#     print("Model found")
-# except:
-#     print("No OpenAI Model found or it's incorrectly specified in the config. Please add one to config.json")
-
 @app.route('/')
 def home():
     jobs = read_jobs_from_db()
     return render_template('jobs.html', jobs=jobs)
 
-@app.route('/job/<int:job_id>')
+@app.route('/jobs/<int:job_id>')
 def job(job_id):
-    jobs = read_jobs_from_db()
-    return render_template('./templates/job_description.html', job=jobs[job_id])
+    job = next((job for job in read_jobs_from_db() if job['id'] == job_id), None)
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+    return render_template('job_description.html', job=job)
 
-@app.route('/get_all_jobs')
+@app.route('/jobs')
 def get_all_jobs():
     return jsonify(read_jobs_from_db())
 
-@app.route('/job_details/<int:job_id>')
+@app.route('/jobs/<int:job_id>/details')
 def job_details(job_id):
     conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-    job_tuple = cursor.fetchone()
-    conn.close()
-    if job_tuple is not None:
-        # Get the column names from the cursor description
-        column_names = [column[0] for column in cursor.description]
-        # Create a dictionary mapping column names to row values
-        job = dict(zip(column_names, job_tuple))
-        job['match'] = read_job_match(job_id)
-        return jsonify(job)
-    else:
+    try:
+        job = read_job(conn, jobs_table(), job_id)
+    finally:
+        conn.close()
+    if job is None:
         return jsonify({"error": "Job not found"}), 404
+    job['match'] = read_job_match(job_id)
+    return jsonify(job)
 
-@app.route('/hide_job/<int:job_id>', methods=['POST'])
-def hide_job(job_id):
+def job_flags(payload):
+    """The {flag: 0|1} updates in a PATCH body, e.g. {"applied": 1}; raises ValueError for anything else."""
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError(f"Send a JSON object with one or more of: {', '.join(JOB_FLAGS)}")
+    unknown = sorted(set(payload) - set(JOB_FLAGS))
+    if unknown:
+        raise ValueError(f"Unknown fields: {', '.join(unknown)}; allowed: {', '.join(JOB_FLAGS)}")
+    bad = sorted(name for name, value in payload.items() if value not in (0, 1) or isinstance(value, float))
+    if bad:
+        raise ValueError(f"Values must be 0 or 1: {', '.join(bad)}")
+    return {name: int(value) for name, value in payload.items()}
+
+@app.route('/jobs/<int:job_id>', methods=['PATCH'])
+def update_job(job_id):
+    # Set applied / hidden / interview / rejected, e.g. {"hidden": 1}; 0 undoes a flag
+    try:
+        flags = job_flags(request.get_json(silent=True))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("UPDATE jobs SET hidden = 1 WHERE id = ?", (job_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"success": "Job marked as hidden"}), 200
+    try:
+        found = update_job_flags(conn, jobs_table(), job_id, flags)
+    finally:
+        conn.close()
+    if not found:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({"id": job_id, "updated": flags}), 200
 
-
-@app.route('/mark_applied/<int:job_id>', methods=['POST'])
-def mark_applied(job_id):
-    print("Applied clicked!")
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    query = "UPDATE jobs SET applied = 1 WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id}')  # Log the query
-    cursor.execute(query, (job_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"success": "Job marked as applied"}), 200
-
-@app.route('/mark_interview/<int:job_id>', methods=['POST'])
-def mark_interview(job_id):
-    print("Interview clicked!")
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    query = "UPDATE jobs SET interview = 1 WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id}')
-    cursor.execute(query, (job_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"success": "Job marked as interview"}), 200
-
-@app.route('/mark_rejected/<int:job_id>', methods=['POST'])
-def mark_rejected(job_id):
-    print("Rejected clicked!")
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    query = "UPDATE jobs SET rejected = 1 WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id}')
-    cursor.execute(query, (job_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"success": "Job marked as rejected"}), 200
-
-@app.route('/get_cover_letter/<int:job_id>')
+@app.route('/jobs/<int:job_id>/cover-letter', methods=['GET'])
 def get_cover_letter(job_id):
     conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("SELECT cover_letter FROM jobs WHERE id = ?", (job_id,))
-    cover_letter = cursor.fetchone()
-    conn.close()
-    if cover_letter is not None:
-        return jsonify({"cover_letter": cover_letter[0]})
-    else:
-        return jsonify({"error": "Cover letter not found"}), 404
+    try:
+        job = read_job(conn, jobs_table(), job_id, ['cover_letter'])
+    finally:
+        conn.close()
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({"cover_letter": job['cover_letter']})
 
-@app.route('/get_resume/<int:job_id>', methods=['POST'])
+@app.route('/jobs/<int:job_id>/resume', methods=['POST'])
 def get_resume(job_id):
     print("Resume clicked!")
     conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("SELECT job_description, title, company FROM jobs WHERE id = ?", (job_id,))
-    job_tuple = cursor.fetchone()
-    if job_tuple is not None:
-        # Get the column names from the cursor description
-        column_names = [column[0] for column in cursor.description]
-        # Create a dictionary mapping column names to row values
-        job = dict(zip(column_names, job_tuple))
+    job = read_job(conn, jobs_table(), job_id, ['job_description', 'title', 'company'])
+    if job is None:
+        conn.close()
+        return jsonify({"error": "Job not found"}), 404
     resume = read_pdf(config["resume_path"])
 
     # Check if OpenAI API key is empty
@@ -176,18 +143,14 @@ def get_resume(job_id):
         print(f"Error connecting to OpenAI: {e}")
         return jsonify({"error": f"Error connecting to OpenAI: {e}"}), 500
 
-    query = "UPDATE jobs SET resume = ? WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id} and resume: {response}')
-    cursor.execute(query, (response, job_id))
-    conn.commit()
+    save_generated_text(conn, jobs_table(), job_id, 'resume', response)
     conn.close()
     return jsonify({"resume": response}), 200
 
-@app.route('/get_CoverLetter/<int:job_id>', methods=['POST'])
+@app.route('/jobs/<int:job_id>/cover-letter', methods=['POST'])
 def get_CoverLetter(job_id):
     print("CoverLetter clicked!")
     conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
 
     def get_chat_gpt(prompt):
         try:
@@ -202,12 +165,11 @@ def get_CoverLetter(job_id):
             print(f"Error connecting to OpenAI: {e}")
             return None
 
-    cursor.execute("SELECT job_description, title, company FROM jobs WHERE id = ?", (job_id,))
-    job_tuple = cursor.fetchone()
-    if job_tuple is not None:
-        column_names = [column[0] for column in cursor.description]
-        job = dict(zip(column_names, job_tuple))
-    
+    job = read_job(conn, jobs_table(), job_id, ['job_description', 'title', 'company'])
+    if job is None:
+        conn.close()
+        return jsonify({"error": "Job not found"}), 404
+
     resume = read_pdf(config["resume_path"])
 
     # Check if resume is None
@@ -236,18 +198,15 @@ def get_CoverLetter(job_id):
         if response is None:
             return jsonify({"error": "Failed to get a response from OpenAI."}), 500
 
-    query = "UPDATE jobs SET cover_letter = ? WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id} and cover letter: {response}')
-    cursor.execute(query, (response, job_id))
-    conn.commit()
+    save_generated_text(conn, jobs_table(), job_id, 'cover_letter', response)
     conn.close()
     return jsonify({"cover_letter": response}), 200
 
 def read_jobs_from_db():
-    # Visible jobs, highest of ats_score / ats_score_embed first
+    # Visible jobs, latest posting date first, then overall_score (see db.read_ranked_jobs)
     conn = sqlite3.connect(config["db_path"])
     try:
-        return read_ranked_jobs(conn, 'jobs')
+        return read_ranked_jobs(conn, jobs_table())
     finally:
         conn.close()
 
@@ -271,10 +230,14 @@ def verify_db_schema():
     # Create missing tables and add missing columns (cover_letter, resume, the ATS scores, ...); see schema.py
     conn = sqlite3.connect(config["db_path"])
     try:
-        init_db(conn, config.get("jobs_tablename", "jobs"))
+        init_db(conn, jobs_table())
     finally:
         conn.close()
 
-if __name__ == "__main__":
+def main():
     verify_db_schema()  # Verify the DB schema before running the app
     app.run(debug=True, port=5001)
+
+
+if __name__ == "__main__":
+    main()

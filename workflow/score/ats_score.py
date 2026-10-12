@@ -13,10 +13,10 @@ Lines with only generic or soft-skill words ("strong sense of ownership") are sk
 Score = 85% requirements + 15% preferences (requirements only when a job lists no preferences). If 2 or more
 requirement lines get almost no credit, the score is capped at 60. Runs locally only; nothing is sent to an API.
 
-  python ats_score.py                          # uses config.json and resume.json
-  python ats_score.py other.json --resume my_resume.json --dry-run
-  python ats_score.py --report                 # matched skills and gaps per job -> output/ats_report.md
-  python ats_score.py --report --job 3 --job 34
+  python -m workflow.score.ats_score                          # uses config.json and resume.json
+  python -m workflow.score.ats_score other.json --resume my_resume.json --dry-run
+  python -m workflow.score.ats_score --report                 # matched skills and gaps per job -> output/ats_report.md
+  python -m workflow.score.ats_score --report --job 3 --job 34
 """
 
 import argparse
@@ -25,8 +25,8 @@ import os
 import re
 from datetime import date
 
-from db import read_visible_job_sections, update_ats_scores
-from schema import open_db
+from db.queries import read_visible_job_sections, replace_ats_scores
+from db.schema import open_db
 
 REQUIREMENTS_WEIGHT = 0.85
 PREFERENCES_WEIGHT = 0.15
@@ -481,7 +481,7 @@ def score_jobs(config, resume_path='resume.json', dry_run=False):
             if score is not None:
                 scores[job_id] = score
         if not dry_run:
-            update_ats_scores(conn, jobs_tablename, scores)
+            replace_ats_scores(conn, jobs_tablename, scores)
     finally:
         conn.close()
 
@@ -492,7 +492,7 @@ def score_jobs(config, resume_path='resume.json', dry_run=False):
 
 
 if __name__ == "__main__":
-    from main import load_config  # here so tests can import this module without the scraper's dependencies
+    from config import load_config  # here so tests can import this module without the scraper's dependencies
 
     parser = argparse.ArgumentParser(description="Score visible jobs against resume.json and save jobs.ats_score")
     parser.add_argument('config', nargs='?', default='config.json')

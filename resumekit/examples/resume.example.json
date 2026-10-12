@@ -1,0 +1,58 @@
+{
+  "basics": {
+    "name": "Alex Rivera",
+    "email": "alex.rivera@example.com",
+    "phone": "+1 555 010 0000",
+    "location": "Los Angeles, CA",
+    "links": ["https://github.com/alexrivera", "https://linkedin.com/in/alexrivera"]
+  },
+  "summary": {
+    "id": "summary",
+    "text": "Backend developer with 5 years of experience building Python services and data pipelines."
+  },
+  "skills": [
+    {"category": "Languages", "items": ["Java","Python", "SQL", "Bash"]},
+    {"category": "Frameworks & Tools", "items": ["Flask", "FastAPI", "PostgreSQL", "Docker", "Airflow"]}
+  ],
+  "experience": [
+    {
+      "id": "exp-acme",
+      "company": "Acme Analytics",
+      "title": "Backend Engineer",
+      "start": "2022-03",
+      "end": "present",
+      "location": "Remote",
+      "bullets": [
+        {"id": "exp-acme-1", "text": "Built data pipelines that load customer events into PostgreSQL."},
+        {"id": "exp-acme-2", "text": "Wrote REST APIs in Flask used by the internal dashboard team."},
+        {"id": "exp-acme-3", "text": "Moved services to Docker and set up automated deployments."}
+      ]
+    },
+    {
+      "id": "exp-shopco",
+      "company": "ShopCo",
+      "title": "Software Developer",
+      "start": "2019-06",
+      "end": "2022-02",
+      "location": "Los Angeles, CA",
+      "bullets": [
+        {"id": "exp-shopco-1", "text": "Maintained the order processing service written in Python."},
+        {"id": "exp-shopco-2", "text": "Improved slow SQL queries in the reporting system."}
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj-scraper",
+      "name": "LinkedIn job scraper",
+      "url": "https://github.com/alexrivera/linkedinscraper",
+      "bullets": [
+        {"id": "proj-scraper-1", "text": "Scraper and Flask web app that filters job postings and stores them in SQLite."}
+      ]
+    }
+  ],
+  "education": [
+    {"school": "California State University", "degree": "B.S.", "field": "Computer Science", "end": "2019"}
+  ],
+  "certifications": []
+}

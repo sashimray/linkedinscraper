@@ -1,0 +1,12 @@
+{
+  "tone": "professional, warm, confident",
+  "max_words": 250,
+  "hiring_manager": "Hiring Manager",
+  "greeting": "Dear {hiring_manager},",
+  "sections": [
+    {"name": "hook", "instructions": "One short paragraph: why this role at {company} appeals to the candidate, tied to the main challenge the role solves. Under 70 words."},
+    {"name": "fit", "instructions": "One or two paragraphs: two or three concrete examples from the resume that show the candidate can handle the job's key responsibilities."},
+    {"name": "closing", "instructions": "One short paragraph: what the candidate would contribute in the first months, and a request for a conversation."}
+  ],
+  "closing": "Best regards,\n{name}\n{email} | {phone}"
+}

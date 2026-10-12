@@ -8,8 +8,8 @@ sys.path.insert(0, ROOT)
 import pandas as pd
 from bs4 import BeautifulSoup
 
-from job_parser import SECTION_FIELDS, description_html, parse_description_html, parse_job_details
-from main import apply_job_page, save_jobs
+from workflow.scrape.job_parser import SECTION_FIELDS, description_html, parse_description_html, parse_job_details
+from workflow.scrape.scraper import apply_job_page, save_jobs
 
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
 JOB_ID = "4476740047"

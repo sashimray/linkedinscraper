@@ -114,6 +114,14 @@ def update_ats_scores(conn, jobs_table_name, scores, column='ats_score'):
                      [(score, job_id) for job_id, score in scores.items()])
     conn.commit()
 
+def replace_ats_scores(conn, jobs_table_name, scores, column='ats_score'):
+    # Set column for every visible job in one transaction: the score from scores ({job_id: 0-100}), NULL for jobs
+    # without one (nothing checkable, or no job_details yet), so a stale score or a default 0 isn't read as a result
+    with conn:
+        conn.execute(f'UPDATE "{jobs_table_name}" SET "{column}" = NULL WHERE COALESCE(hidden, 0) != 1')
+        conn.executemany(f'UPDATE "{jobs_table_name}" SET "{column}" = ? WHERE id = ?',
+                         [(score, job_id) for job_id, score in scores.items()])
+
 def read_visible_job_item_matches(conn, jobs_table_name):
     # (job_id, kind, idx, text, skill, method, similarity) for visible jobs' job_items (written by embedder.py),
     # one row per match; skill/method/similarity are None for lines that matched nothing
@@ -127,13 +135,13 @@ def read_visible_job_item_matches(conn, jobs_table_name):
     """).fetchall()
 
 def read_ranked_jobs(conn, jobs_table_name):
-    # Visible jobs as dicts: latest posting date first, then within a day the average of ats_score and
-    # ats_score_embed (a missing score counts as 0), then newest id
+    # Visible jobs as dicts: latest posting date first, then within a day overall_score (the generated average of
+    # the two ATS scores; jobs missing a score come last), then newest id
     cursor = conn.execute(f"""
         SELECT * FROM "{jobs_table_name}"
         WHERE COALESCE(hidden, 0) != 1
         ORDER BY COALESCE(date, '') DESC,
-                 (COALESCE(ats_score, 0) + COALESCE(ats_score_embed, 0)) / 2.0 DESC,
+                 overall_score DESC NULLS LAST,
                  id DESC
     """)
     column_names = [column[0] for column in cursor.description]
@@ -157,6 +165,34 @@ def read_job_item_matches(conn, job_id):
         """, (job_id,)).fetchall()
     except sqlite3.OperationalError:
         return []
+
+JOB_FLAGS = ('applied', 'hidden', 'interview', 'rejected')
+GENERATED_TEXT_COLUMNS = ('cover_letter', 'resume')
+
+def read_job(conn, jobs_table_name, job_id, columns=None):
+    # One job as a dict (all columns, or only those named), or None when there is no job with that id
+    selected = ', '.join(f'"{column}"' for column in columns) if columns else '*'
+    cursor = conn.execute(f'SELECT {selected} FROM "{jobs_table_name}" WHERE id = ?', (job_id,))
+    row = cursor.fetchone()
+    return None if row is None else dict(zip([column[0] for column in cursor.description], row))
+
+def save_generated_text(conn, jobs_table_name, job_id, column, text):
+    # Store a generated cover letter or resume for one job; column must be in GENERATED_TEXT_COLUMNS
+    if column not in GENERATED_TEXT_COLUMNS:
+        raise ValueError(f"Not a generated-text column: {column!r}")
+    conn.execute(f'UPDATE "{jobs_table_name}" SET "{column}" = ? WHERE id = ?', (text, job_id))
+    conn.commit()
+
+
+def update_job_flags(conn, jobs_table_name, job_id, flags):
+    # flags: {name: 0 or 1} with names from JOB_FLAGS. Returns False when there is no job with that id.
+    unknown = set(flags) - set(JOB_FLAGS)
+    if not flags or unknown:
+        raise ValueError(f"Unknown or missing job flags: {sorted(unknown) or 'none given'}")
+    assignments = ', '.join(f'"{name}" = ?' for name in flags)
+    cursor = conn.execute(f'UPDATE "{jobs_table_name}" SET {assignments} WHERE id = ?', [*flags.values(), job_id])
+    conn.commit()
+    return cursor.rowcount > 0
 
 def hide_jobs(conn, jobs_table_name, job_ids):
     conn.executemany(f'UPDATE "{jobs_table_name}" SET hidden = 1 WHERE id = ?', [(job_id,) for job_id in job_ids])

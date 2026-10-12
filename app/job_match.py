@@ -3,10 +3,10 @@ Matched keywords and gaps for one job, for the job page in app.py: one summary f
 (resume.json) and one from the embedding-based ats_score_embed.py (skills_flat.json). Runs locally only.
 """
 
-import ats_score
-import ats_score_embed
-from db import read_job_item_matches, read_job_sections
-from embedder import load_skills
+import workflow.score.ats_score as ats_score
+import workflow.score.ats_score_embed as ats_score_embed
+from db.queries import read_job_item_matches, read_job_sections
+from workflow.score.embedder import load_skills
 
 
 def load_profiles(resume_path='resume.json', skills_path='skills_flat.json'):

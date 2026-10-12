@@ -9,11 +9,11 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import db
-from ats_score_embed import (EMBED_FULL, MISSING_DOMAIN_WEIGHT, MISSING_TECH_WEIGHT, explain, group_lines, line_credit, match_credit,
+import db.queries as db
+from workflow.score.ats_score_embed import (EMBED_FULL, MISSING_DOMAIN_WEIGHT, MISSING_TECH_WEIGHT, explain, group_lines, line_credit, match_credit,
                              score_job, score_jobs, section_score, skill_profile, alias_coverage)
-from embedder import DEFAULT_THRESHOLD
-from schema import EMBEDDER_SCHEMA as SCHEMA
+from workflow.score.embedder import DEFAULT_THRESHOLD
+from db.schema import EMBEDDER_SCHEMA as SCHEMA
 
 PROFILE = skill_profile([{'name': 'Python', 'weight': 3}, {'name': 'Docker', 'aliases': ['containerization'], 'weight': 3},
                          {'name': 'distributed systems', 'weight': 2}])
@@ -113,9 +113,9 @@ def test_score_jobs_saves_visible_jobs_only():
     config = {'db_path': path, 'jobs_tablename': 'jobs'}
     assert score_jobs(config, skills_path, dry_run=True) == {1: 50}
     # the dry run brings the schema up to date (adds the column) but saves no scores
-    assert con.execute('SELECT id, ats_score_embed FROM jobs ORDER BY id').fetchall() == [(1, 0), (2, 0)]
+    assert con.execute('SELECT id, ats_score_embed FROM jobs ORDER BY id').fetchall() == [(1, None), (2, None)]
     score_jobs(config, skills_path)
-    assert con.execute('SELECT id, ats_score_embed FROM jobs ORDER BY id').fetchall() == [(1, 50), (2, 0)]
+    assert con.execute('SELECT id, ats_score_embed FROM jobs ORDER BY id').fetchall() == [(1, 50), (2, None)]
     con.close()
 
 
@@ -130,6 +130,14 @@ def test_score_jobs_without_embedder_tables():
     with redirect_stdout(out):
         assert score_jobs({'db_path': path, 'jobs_tablename': 'jobs'}, skills_path) == {}
     assert 'run embedder.py first' in out.getvalue()
+
+
+def test_replace_ats_scores_resets_visible_jobs_only():
+    con = sqlite3.connect(':memory:')
+    con.execute('CREATE TABLE jobs (id INTEGER PRIMARY KEY, hidden INTEGER, s INT DEFAULT 0)')
+    con.executemany('INSERT INTO jobs (id, hidden, s) VALUES (?, ?, ?)', [(1, 0, 40), (2, 0, 30), (3, 1, 20), (4, None, 10)])
+    db.replace_ats_scores(con, 'jobs', {1: 70}, 's')
+    assert dict(con.execute('SELECT id, s FROM jobs')) == {1: 70, 2: None, 3: 20, 4: None}
 
 
 def test_update_ats_scores_custom_column():

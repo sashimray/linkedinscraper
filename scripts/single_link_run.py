@@ -2,16 +2,17 @@
 Fetch one LinkedIn job page and print what job_parser extracts from it (for checking the parser).
 Nothing is saved to the database.
 
-  python single_link_run.py https://www.linkedin.com/jobs/view/4478314628/
-  python single_link_run.py 4478314628 --config other.json
+  python -m scripts.single_link_run https://www.linkedin.com/jobs/view/4478314628/
+  python -m scripts.single_link_run 4478314628 --config other.json
 """
 import argparse
 import json
 import re
 import sys
 
-from job_parser import parse_job_details
-from main import get_with_retry, load_config
+from workflow.scrape.job_parser import parse_job_details
+from config import load_config
+from workflow.scrape.scraper import get_with_retry
 
 # A bare id, or a job URL; the query string LinkedIn adds when you copy a link (?refId=...&trackingId=...) is dropped
 JOB_URL = re.compile(r"^(?:https?://(?:www\.)?linkedin\.com/jobs/view/(\d+)/?(?:[?#]\S*)?|(\d+))$")

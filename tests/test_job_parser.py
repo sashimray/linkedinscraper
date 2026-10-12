@@ -9,10 +9,10 @@ sys.path.insert(0, ROOT)
 
 from bs4 import BeautifulSoup
 
-import db
-import schema
-import llm_sections
-from job_parser import classify_heading, parse_job_details, parse_job_text
+import db.queries as db
+import db.schema as schema
+import workflow.llm_sections as llm_sections
+from workflow.scrape.job_parser import classify_heading, parse_job_details, parse_job_text
 from resumekit.application_kit import ApplicationKit
 
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
@@ -151,7 +151,7 @@ def test_classify_heading_variants():
 def test_text_matches_html_parse():
     # The stored job_description text has no bold, but these postings' headings don't depend on it
     import copy
-    from main import transform_job
+    from workflow.scrape.scraper import transform_job
     for job_id in EXPECTED:
         if job_id == "4400259782":  # transform_job glues two intro paragraphs together, so 3 prose lines differ
             continue
@@ -203,8 +203,8 @@ def fake_llm(calls):
 PARSEABLE = "Responsibilities:\n- Build things\nRequirements:\n- Python\nNice to have:\n- Go"
 
 
-def test_hist_run_then_llm_run():
-    import hist_run
+def test_reparse_all_then_llm_run():
+    from scripts.reparse_all import reparse_all
     with tempfile.TemporaryDirectory() as tmp:
         path = make_jobs_db(tmp, [
             ("Dev", "A", "1", PARSEABLE, 0),
@@ -213,7 +213,7 @@ def test_hist_run_then_llm_run():
             ("Dev", "D", "4", "Could not find Job Description", 0),
         ])
         config = {"db_path": path, "jobs_tablename": "jobs"}
-        assert hist_run.hist_run(config) == 2
+        assert reparse_all(config) == 2
         rows = job_details(path)
         assert rows["A"] == ("- Build things", "- Python", "- Go", 1)
         assert rows["B"] == ("", "", "", 0)
@@ -225,8 +225,8 @@ def test_hist_run_then_llm_run():
         assert (done, failed, len(calls)) == (1, 0, 1)
         assert job_details(path)["B"] == ("- Build APIs", "- Python", "", 2)
 
-        # Re-running hist_run updates rule-parsed rows but keeps what the LLM filled in
-        assert hist_run.hist_run(config) == 2
+        # Re-running reparse_all updates rule-parsed rows but keeps what the LLM filled in
+        assert reparse_all(config) == 2
         rows = job_details(path)
         assert rows["B"] == ("- Build APIs", "- Python", "", 2)
         assert rows["A"] == ("- Build things", "- Python", "- Go", 1)
@@ -236,7 +236,7 @@ def test_hist_run_then_llm_run():
 
 
 def test_clearance_or_citizenship_requirement():
-    from hist_run import clearance_or_citizenship_requirement as check
+    from workflow.hide import clearance_or_citizenship_requirement as check
     hide = [
         "- Active TS/SCI clearance (eligible for CI Poly)",
         "- Ability to obtain a Secret clearance",
@@ -277,7 +277,7 @@ def test_clearance_or_citizenship_requirement():
 
 
 def test_hide_clearance_jobs():
-    import hist_run
+    import workflow.hide as hide
     with tempfile.TemporaryDirectory() as tmp:
         path = make_jobs_db(tmp, [
             ("Dev", "A", "1", "Requirements:\n- Python\n- Active TS/SCI clearance", 0),
@@ -285,12 +285,12 @@ def test_hide_clearance_jobs():
             ("Dev", "C", "3", "Requirements:\n- Python", 0),
         ])
         config = {"db_path": path, "jobs_tablename": "jobs"}
-        assert hist_run.hide_clearance_jobs(config, dry_run=True) == [1]  # reads the description, no job_details needed
+        assert hide.hide_clearance_jobs(config, dry_run=True) == [1]  # reads the description, no job_details needed
         conn = sqlite3.connect(path)
         assert conn.execute("SELECT count(*) FROM jobs WHERE hidden = 1").fetchone()[0] == 0  # dry run changes nothing
         conn.close()
 
-        assert hist_run.hide_clearance_jobs(config) == [1]
+        assert hide.hide_clearance_jobs(config) == [1]
         conn = sqlite3.connect(path)
         assert conn.execute("SELECT company, hidden FROM jobs ORDER BY id").fetchall() == [("A", 1), ("B", 0), ("C", 0)]
         conn.close()

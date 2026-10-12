@@ -132,6 +132,8 @@
             .score-high { background-color: #c8e6c9; }
             .score-mid { background-color: #fff3c4; }
             .score-low { background-color: #ffd6d6; }
+            .score-none { background-color: #eeeeee; color: #555; }
+            .score-overall { font-weight: bold; }
             .match-section {
                 margin: 12px 0;
                 padding: 10px;
@@ -177,9 +179,12 @@
                         <p>{{ job.company }}, {{ job.location }}</p>
                         <p>{{ job.date }}</p>
                         <div class="scores">
-                            {% for label, value in [('ATS', job.ats_score), ('Embed', job.ats_score_embed)] %}
-                            {% set value = value or 0 %}
-                            <span class="score {% if value >= 70 %}score-high{% elif value >= 40 %}score-mid{% else %}score-low{% endif %}">{{ label }} {{ value }}</span>
+                            {% for label, value in [('Overall', job.overall_score), ('ATS', job.ats_score), ('Embed', job.ats_score_embed)] %}
+                            {% if value is none %}
+                            <span class="score score-none{% if loop.first %} score-overall{% endif %}" title="not scored yet">{{ label }} –</span>
+                            {% else %}
+                            <span class="score {% if value >= 70 %}score-high{% elif value >= 40 %}score-mid{% else %}score-low{% endif %}{% if loop.first %} score-overall{% endif %}">{{ label }} {{ value }}</span>
+                            {% endif %}
                             {% endfor %}
                         </div>
                     </div>

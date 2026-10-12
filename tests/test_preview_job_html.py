@@ -10,9 +10,9 @@ sys.path.insert(0, ROOT)
 
 from bs4 import BeautifulSoup
 
-import preview_job_html
-from job_parser import SECTION_FIELDS, description_html, parse_description_html, parse_job_details
-from preview_job_html import main, preview, report, write_page
+import scripts.preview_job_html as preview_job_html
+from workflow.scrape.job_parser import SECTION_FIELDS, description_html, parse_description_html, parse_job_details
+from scripts.preview_job_html import main, preview, report, write_page
 
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
 JOB_ID = "4476740047"

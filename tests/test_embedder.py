@@ -7,8 +7,8 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from schema import EMBEDDER_SCHEMA as SCHEMA
-from embedder import (HashEmbedder, LazyEmbedder, alias_hits, build_patterns, compile_alias, embed_input,
+from db.schema import EMBEDDER_SCHEMA as SCHEMA
+from workflow.score.embedder import (HashEmbedder, LazyEmbedder, alias_hits, build_patterns, compile_alias, embed_input,
                       embed_missing, match_all, sync_items, sync_skill_vectors)
 
 SKILLS = [
