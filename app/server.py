@@ -42,19 +42,13 @@ def home():
     jobs = read_jobs_from_db()
     return render_template('jobs.html', jobs=jobs)
 
-@app.route('/jobs/<int:job_id>')
-def job(job_id):
-    job = next((job for job in read_jobs_from_db() if job['id'] == job_id), None)
-    if job is None:
-        return jsonify({"error": "Job not found"}), 404
-    return render_template('job_description.html', job=job)
-
 @app.route('/jobs')
 def get_all_jobs():
     return jsonify(read_jobs_from_db())
 
-@app.route('/jobs/<int:job_id>/details')
-def job_details(job_id):
+@app.route('/jobs/<int:job_id>', methods=['GET'])
+def get_job(job_id):
+    # The job with its keyword matches (see job_match.py)
     conn = sqlite3.connect(config["db_path"])
     try:
         job = read_job(conn, jobs_table(), job_id)

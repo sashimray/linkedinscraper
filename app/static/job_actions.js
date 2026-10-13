@@ -1,7 +1,7 @@
 var selectedJob = null;
 
 // API (app/server.py):
-//   GET   /jobs/<id>/details     the job with its score matches
+//   GET   /jobs/<id>             the job with its keyword matches
 //   PATCH /jobs/<id>             {"applied"|"hidden"|"interview"|"rejected": 0|1}
 //   POST  /jobs/<id>/cover-letter   generate and save a cover letter
 
@@ -36,7 +36,7 @@ async function showJobDetails(jobId) {
     selectedJob = newSelectedJob;
 
     try {
-        const job = await requestJson('/jobs/' + encodeURIComponent(jobId) + '/details');
+        const job = await requestJson('/jobs/' + encodeURIComponent(jobId));
         updateJobDetails(job);
         updateCoverLetter(job.cover_letter || null);
     } catch (error) {

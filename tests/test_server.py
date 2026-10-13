@@ -76,14 +76,14 @@ def test_patch_rejects_bad_requests():
     assert flags(path, 1)['hidden'] == 0
 
 
-def test_job_details_and_job_page():
+def test_get_job_returns_the_job_as_json():
     client, _ = client_with_db()
-    details = client.get('/jobs/1/details')
-    assert details.status_code == 200 and details.get_json()['title'] == 'Dev <b>'
-    assert 'match' in details.get_json()
-    assert client.get('/jobs/99/details').status_code == 404
-    assert client.get('/jobs/2').status_code == 200  # looked up by id, not list position
+    job = client.get('/jobs/1')
+    assert job.status_code == 200 and job.is_json
+    assert job.get_json()['title'] == 'Dev <b>' and 'match' in job.get_json()
+    assert client.get('/jobs/2').get_json()['id'] == 2  # looked up by id, not list position
     assert client.get('/jobs/99').status_code == 404
+    assert client.get('/jobs/1/details').status_code == 404  # old path is gone
 
 
 def test_generation_routes_return_404_for_unknown_jobs_before_calling_openai():
@@ -107,7 +107,7 @@ def test_update_job_flags_rejects_unknown_columns():
 def test_app_uses_the_configured_table_name():
     client, path = client_with_db('my_jobs')
     assert [job['id'] for job in client.get('/jobs').get_json()] == [1, 2]
-    assert client.get('/jobs/2/details').get_json()['title'] == 'Eng'
+    assert client.get('/jobs/2').get_json()['title'] == 'Eng'
     assert client.patch('/jobs/2', json={'rejected': 1}).status_code == 200
     conn = sqlite3.connect(path)
     assert conn.execute('SELECT rejected FROM my_jobs WHERE id = 2').fetchone() == (1,)
